@@ -1,5 +1,10 @@
 # elm-nlds
 
+This is an Elm port of Paul Chiusano's Unison libraries:
+
+- [pchiusano/nlds](https://share.unison-lang.org/@pchiusano/nlds) - Natural Language Disambiguator
+- [pchiusano/peachy](https://share.unison-lang.org/@pchiusano/peachy) - Priority search
+
 [![Build Status](https://github.com/pete-murphy/elm-nlds/workflows/CI/badge.svg)](https://github.com/pete-murphy/elm-nlds/actions?query=branch%3Amain)
 
 **Natural language parser for loosely ordered token sequences.**
@@ -137,13 +142,6 @@ The autocomplete explores the parse tree lazily, finding the next tokens needed 
 
 - **`Nld`** - The main parser type and combinators
 - **`Peach`** - Lazy priority search data structure (used internally, but exposed for advanced use)
-
-## Attribution
-
-This is an Elm port of Paul Chiusano's Unison libraries:
-
-- [pchiusano/nlds](https://share.unison-lang.org/@pchiusano/nlds) - Natural Language Disambiguator
-- [pchiusano/peachy](https://share.unison-lang.org/@pchiusano/peachy) - Priority search
 
 ## License
 
