@@ -1,11 +1,11 @@
 # elm-nlds
 
+[![Build Status](https://github.com/pete-murphy/elm-nlds/workflows/CI/badge.svg)](https://github.com/pete-murphy/elm-nlds/actions?query=branch%3Amain)
+
 This is an Elm port of Paul Chiusano's Unison libraries:
 
 - [pchiusano/nlds](https://share.unison-lang.org/@pchiusano/nlds) - Natural Language Disambiguator
 - [pchiusano/peachy](https://share.unison-lang.org/@pchiusano/peachy) - Priority search
-
-[![Build Status](https://github.com/pete-murphy/elm-nlds/workflows/CI/badge.svg)](https://github.com/pete-murphy/elm-nlds/actions?query=branch%3Amain)
 
 **Natural language parser for loosely ordered token sequences.**
 
@@ -27,6 +27,8 @@ runTake 1 deleteCommand [ "file", "delete" ]
 runTake 1 deleteCommand [ "please", "remove", "the", "file" ]
 --> [ ( "delete", "file" ) ]  -- ignores irrelevant tokens, canonicalizes synonyms
 ```
+
+Ellie example of a more involved exercise logging parser: https://ellie-app.com/xRj5kGKzc9Za1
 
 ## Design Goals
 
