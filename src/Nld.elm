@@ -612,24 +612,26 @@ andThen f nld =
 
 This enables pipe-style composition for building parsers with arbitrary arity:
 
-    type alias Command =
-        { action : String
-        , target : String
-        , count : Int
-        , force : Bool
-        }
-
-    commandParser : Nld Command
-    commandParser =
-        succeed Command
-            |> andMap (word "delete")
-            |> andMap token
+    runList
+        (succeed Tuple.pair
+            |> andMap (word "buy")
             |> andMap nat
-            |> andMap (choice [ map (\_ -> True) (word "force"), succeed False ])
-
-    runList commandParser [ "delete", "file.txt", "3", "force" ]
+        )
+        [ "buy", "3" ]
         |> List.map Tuple.second
-    --> [ { action = "delete", target = "file.txt", count = 3, force = True } ]
+    --> [ ( "buy", 3 ) ]
+
+Works with any number of fields - no need for `map4`, `map5`, etc:
+
+    runList
+        (succeed (\a b c -> { x = a, y = b, z = c })
+            |> andMap (word "a")
+            |> andMap (word "b")
+            |> andMap (word "c")
+        )
+        [ "a", "b", "c" ]
+        |> List.map Tuple.second
+    --> [ { x = "a", y = "b", z = "c" } ]
 
 -}
 andMap : Nld a -> Nld (a -> b) -> Nld b
