@@ -30,6 +30,7 @@ import NoUnused.Modules
 import NoUnused.Parameters
 import NoUnused.Patterns
 import NoUnused.Variables
+import Simplify
 import Review.Rule exposing (Rule)
 
 
@@ -39,18 +40,15 @@ config =
     , NoUnused.Exports.rule
     , NoUnused.Dependencies.rule
     , NoUnused.CustomTypeConstructorArgs.rule
-
-    --, NoUnused.Variables.rule
-    -- , NoUnused.CustomTypeConstructors.rule []
+    , NoUnused.Variables.rule
+    , NoUnused.CustomTypeConstructors.rule []
     , NoUnused.Parameters.rule
-
-    --, NoUnused.Patterns.rule
+    , NoUnused.Patterns.rule
     , NoDebug.Log.rule
     , NoDebug.TodoOrToString.rule
         |> Review.Rule.ignoreErrorsForDirectories [ "tests" ]
     , NoExposingEverything.rule
-
-    --, NoImportingEverything.rule []
+    , NoImportingEverything.rule []
     , NoMissingTypeAnnotation.rule
 
     --, NoInconsistentAliases.config
@@ -68,6 +66,7 @@ config =
     , Docs.ReviewLinksAndSections.rule
     , Docs.ReviewAtDocs.rule
     , Docs.UpToDateReadmeLinks.rule
+    , Simplify.rule Simplify.defaults
     ]
         |> List.map
             (\rule ->

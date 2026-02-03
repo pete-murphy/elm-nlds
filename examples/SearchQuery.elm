@@ -111,7 +111,6 @@ parseQuery input =
     in
     runTake 1 query tokens
         |> List.head
-        |> Maybe.map Tuple.second
 
 
 {-| Example inputs demonstrating the parser.

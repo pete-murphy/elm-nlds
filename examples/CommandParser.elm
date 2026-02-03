@@ -101,7 +101,6 @@ parseCommand input =
     in
     runTake 1 command tokens
         |> List.head
-        |> Maybe.map Tuple.second
 
 
 {-| Example inputs demonstrating the parser.

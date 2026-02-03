@@ -117,21 +117,20 @@ tokenPositionsFromList tokens =
 -- RUNNING PARSERS
 
 
-{-| Run a parser on a list of tokens and return all results as weighted pairs.
-Results are ordered by weight (best matches first).
+{-| Run a parser on a list of tokens and return all results.
+Results are ordered by priority (best matches first).
 
     runList (word "hello") [ "hello", "world" ]
-        |> List.map Tuple.second
     --> [ "hello" ]
 
     runList (tuple2 (word "delete") (word "file")) [ "file", "delete" ]
-        |> List.map Tuple.second
     --> [ ( "delete", "file" ) ]
 
 -}
-runList : Nld a -> List String -> List ( Float, a )
+runList : Nld a -> List String -> List a
 runList nld tokens =
     run nld (tokenPositionsFromList tokens)
+        |> List.map Tuple.second
 
 
 {-| Run a parser on TokenPositions and return all results.
@@ -145,13 +144,14 @@ run nld tp =
 {-| Run a parser and take only the first n results.
 
     runTake 1 (word "cat") [ "the", "cat", "sat" ]
-    --> [ ( 2, "cat" ) ]
+    --> [ "cat" ]
 
 -}
-runTake : Int -> Nld a -> List String -> List ( Float, a )
+runTake : Int -> Nld a -> List String -> List a
 runTake n nld tokens =
     runHelper nld (tokenPositionsFromList tokens) -1
         |> Peach.take n
+        |> List.map Tuple.second
 
 
 {-| Internal helper to run an Nld and produce a Peach of results.
@@ -174,7 +174,7 @@ runHelper nld tp lastPos =
 {-| Match a specific word/token.
 
     runList (word "delete") [ "please", "delete", "this" ]
-    --> [ ( 2, "delete" ) ]
+    --> [ "delete" ]
 
 -}
 word : String -> Nld String
@@ -186,7 +186,6 @@ word w =
 Useful for synonyms.
 
     runList (words [ "delete", "remove", "erase" ]) [ "please", "erase", "this" ]
-        |> List.map Tuple.second
     --> [ "delete" ]
 
 The result is canonicalized to the first word in the list.
@@ -248,7 +247,6 @@ words wordList =
 {-| Match any token and return it.
 
     runTake 1 token [ "anything" ]
-        |> List.map Tuple.second
     --> [ "anything" ]
 
 -}
@@ -260,7 +258,6 @@ token =
 {-| Match a natural number (non-negative integer).
 
     runList (tuple2 (word "buy") nat) [ "buy", "3", "apples" ]
-        |> List.map Tuple.second
     --> [ ( "buy", 3 ) ]
 
 -}
@@ -272,7 +269,6 @@ nat =
 {-| Match tokens satisfying a predicate.
 
     runList (tokenMatching (String.endsWith ".txt")) [ "open", "report.txt" ]
-        |> List.map Tuple.second
     --> [ "report.txt" ]
 
 -}
@@ -284,7 +280,6 @@ tokenMatching pred =
 {-| Match any of several weighted tokens. Lower weights are preferred.
 
     runTake 1 (minimalToken [ ( 0.0, "delete" ), ( 1.0, "remove" ) ]) [ "remove", "delete" ]
-        |> List.map Tuple.second
     --> [ "delete" ]
 
 -}
@@ -339,7 +334,7 @@ minimalToken weightedWords =
 {-| Match a specific word and return both the word and its position.
 
     runList (indexedWord "cat") [ "the", "cat", "sat" ]
-    --> [ ( 2, ( "cat", 1 ) ) ]
+    --> [ ( "cat", 1 ) ]
 
 -}
 indexedWord : String -> Nld ( String, Int )
@@ -367,52 +362,62 @@ indexedWord w =
     More (Set.singleton w) k
 
 
-{-| Match any of the given words and return the matched word with its position.
+{-| Match any of the given words and return the canonical (first) word with its position.
+
+Note: Like `words`, this canonicalizes the result to the first word in the list.
+For example, `indexedWords ["hello", "hi"]` with input `["hi"]` returns `[("hello", 0)]`.
+
 -}
 indexedWords : List String -> Nld ( String, Int )
 indexedWords wordList =
-    let
-        allWords =
-            Set.fromList wordList
+    case wordList of
+        [] ->
+            More Set.empty (\_ _ -> Peach.fail)
 
-        k tp lastPos =
+        first :: _ ->
             let
-                allPositions =
-                    wordList
-                        |> List.concatMap
-                            (\w ->
-                                positions w tp
-                                    |> Set.toList
-                                    |> List.map (\p -> ( w, p ))
-                            )
+                allWords =
+                    Set.fromList wordList
 
-                weightedPositions =
-                    allPositions
-                        |> List.map
-                            (\( w, p ) ->
-                                let
-                                    wordPenalty =
-                                        wordList
-                                            |> List.indexedMap Tuple.pair
-                                            |> List.filter (\( _, word_ ) -> word_ == w)
-                                            |> List.head
-                                            |> Maybe.map (\( i, _ ) -> toFloat i * 0.1)
-                                            |> Maybe.withDefault 0
-                                in
-                                ( gapCost lastPos p + wordPenalty, ( w, p ) )
-                            )
+                k tp lastPos =
+                    let
+                        allPositions =
+                            wordList
+                                |> List.concatMap
+                                    (\w ->
+                                        positions w tp
+                                            |> Set.toList
+                                            |> List.map (\p -> ( w, p ))
+                                    )
+
+                        weightedPositions =
+                            allPositions
+                                |> List.map
+                                    (\( w, p ) ->
+                                        let
+                                            wordPenalty =
+                                                wordList
+                                                    |> List.indexedMap Tuple.pair
+                                                    |> List.filter (\( _, word_ ) -> word_ == w)
+                                                    |> List.head
+                                                    |> Maybe.map (\( i, _ ) -> toFloat i * 0.1)
+                                                    |> Maybe.withDefault 0
+                                        in
+                                        ( gapCost lastPos p + wordPenalty, ( w, p ) )
+                                    )
+                    in
+                    if List.isEmpty weightedPositions then
+                        Peach.fail
+
+                    else
+                        Peach.peach weightedPositions
+                            |> Peach.map
+                                (\( w, p ) ->
+                                    -- Canonicalize to first word in the list
+                                    Done ( first, p ) (remove w p tp) p
+                                )
             in
-            if List.isEmpty weightedPositions then
-                Peach.fail
-
-            else
-                Peach.peach weightedPositions
-                    |> Peach.map
-                        (\( w, p ) ->
-                            Done ( w, p ) (remove w p tp) p
-                        )
-    in
-    More allWords k
+            More allWords k
 
 
 {-| Match any token and return it with its position.
@@ -518,12 +523,10 @@ indexedTokenMatching pred =
 This is the fundamental building block for applicative-style parsing with `andMap`.
 
     runList (succeed 42) [ "any", "tokens" ]
-        |> List.map Tuple.second
     --> [ 42 ]
 
     -- Use with choice for default values:
     runList (choice [ nat, succeed 1 ]) [ "not-a-number" ]
-        |> List.map Tuple.second
     --> [ 1 ]
 
 -}
@@ -541,7 +544,7 @@ succeed a =
 {-| Transform the result of a parser.
 
     runList (map String.toUpper (word "hello")) [ "hello" ]
-    --> [ ( 1, "HELLO" ) ]
+    --> [ "HELLO" ]
 
 -}
 map : (a -> b) -> Nld a -> Nld b
@@ -571,7 +574,6 @@ map3 f nldA nldB nldC =
 {-| Combine two parsers into a tuple.
 
     runList (tuple2 (word "delete") (word "file")) [ "delete", "file" ]
-        |> List.map Tuple.second
     --> [ ( "delete", "file" ) ]
 
 -}
@@ -618,7 +620,6 @@ This enables pipe-style composition for building parsers with arbitrary arity:
             |> andMap nat
         )
         [ "buy", "3" ]
-        |> List.map Tuple.second
     --> [ ( "buy", 3 ) ]
 
 Works with any number of fields - no need for `map4`, `map5`, etc:
@@ -630,7 +631,6 @@ Works with any number of fields - no need for `map4`, `map5`, etc:
             |> andMap (word "c")
         )
         [ "a", "b", "c" ]
-        |> List.map Tuple.second
     --> [ { x = "a", y = "b", z = "c" } ]
 
 -}
@@ -642,7 +642,6 @@ andMap nldA nldFn =
 {-| Try multiple parsers and return all successful parses.
 
     runList (choice [ word "delete", word "add" ]) [ "delete" ]
-        |> List.map Tuple.second
     --> [ "delete" ]
 
 -}
@@ -665,41 +664,75 @@ choice parsers =
 
 {-| Match zero or more occurrences of a parser.
 
-Results include all possible match lengths, with longer matches preferred.
+Returns all prefixes of the greedy (in-order) match:
+
+  - For `repeat nat` with `["1", "2", "3"]`, returns:
+    `[[1, 2, 3], [1, 2], [1], []]`
+
+The greedy collection always takes elements in position order.
 
 -}
 repeat : Nld a -> Nld (List a)
 repeat nld =
     let
-        go : List a -> TokenPositions -> Int -> Peach (Nld (List a))
-        go acc tp lastPos =
+        -- Step a parser to completion, returning (value, remaining tokens, final position)
+        step : Nld a -> TokenPositions -> Int -> Maybe ( a, TokenPositions, Int )
+        step parser tp lastPos =
+            case parser of
+                Done a rem pos ->
+                    Just ( a, rem, pos )
+
+                More _ cont ->
+                    -- Get the first result that's at or after lastPos
+                    cont tp lastPos
+                        |> Peach.toList
+                        |> List.filterMap
+                            (\( _, result ) ->
+                                case result of
+                                    Done a rem pos ->
+                                        if pos >= lastPos then
+                                            Just ( a, rem, pos )
+
+                                        else
+                                            Nothing
+
+                                    More _ _ ->
+                                        Nothing
+                            )
+                        |> List.head
+
+        -- Greedily collect all matches in position order
+        collectGreedy : List a -> TokenPositions -> Int -> ( List a, TokenPositions, Int )
+        collectGreedy acc tp lastPos =
+            case step nld tp lastPos of
+                Nothing ->
+                    ( List.reverse acc, tp, lastPos )
+
+                Just ( a, newTp, newPos ) ->
+                    collectGreedy (a :: acc) newTp newPos
+
+        -- The continuation that runs when we parse
+        k tp lastPos =
             let
-                -- Option 1: Stop here and return what we have
-                stopHere =
-                    Peach.peach [ ( 0, Done (List.reverse acc) tp lastPos ) ]
+                ( fullList, finalTp, finalPos ) =
+                    collectGreedy [] tp lastPos
 
-                -- Option 2: Try to match one more
-                tryMore =
-                    case nld of
-                        Done a newTp newPos ->
-                            go (a :: acc) newTp newPos
+                n =
+                    List.length fullList
 
-                        More _ k ->
-                            k tp lastPos
-                                |> Peach.flatMap
-                                    (\result ->
-                                        case result of
-                                            Done a newTp newPos ->
-                                                go (a :: acc) newTp newPos
-
-                                            More _ _ ->
-                                                -- Shouldn't happen in well-formed parsers
-                                                Peach.fail
-                                    )
+                -- Generate all prefixes from n elements down to 0
+                -- Weight by index so shorter prefixes have higher weight (less preferred)
+                prefixWeights =
+                    List.range 0 n
+                        |> List.map (\i -> ( toFloat i, n - i ))
             in
-            Peach.choose [ stopHere, tryMore ]
+            Peach.peach prefixWeights
+                |> Peach.map
+                    (\len ->
+                        Done (List.take len fullList) finalTp finalPos
+                    )
     in
-    More (getWanted nld) (go [])
+    More (getWanted nld) k
 
 
 

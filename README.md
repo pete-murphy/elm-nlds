@@ -17,11 +17,9 @@ deleteCommand =
         (word "file")
 
 runTake 1 deleteCommand [ "file", "delete" ]
-    |> List.map Tuple.second
 --> [ ( "delete", "file" ) ]
 
 runTake 1 deleteCommand [ "please", "remove", "the", "file" ]
-    |> List.map Tuple.second
 --> [ ( "delete", "file" ) ]  -- ignores irrelevant tokens, canonicalizes synonyms
 ```
 
@@ -65,22 +63,18 @@ import Nld exposing (word, words, token, nat, runList)
 
 -- Match a specific word
 runList (word "hello") [ "hello", "world" ]
-    |> List.map Tuple.second
 --> [ "hello" ]
 
 -- Match any of several synonyms (canonicalizes to first)
 runList (words [ "yes", "yeah", "yep" ]) [ "yeah" ]
-    |> List.map Tuple.second
 --> [ "yes" ]
 
 -- Match any token
 runList token [ "anything" ]
-    |> List.map Tuple.second
 --> [ "anything" ]
 
 -- Match a natural number
 runList nat [ "42" ]
-    |> List.map Tuple.second
 --> [ 42 ]
 ```
 
@@ -106,19 +100,38 @@ tuple2 (word "add") (repeat nat)
 
 ### Autocomplete
 
+Build context-aware completions that adapt as the user types:
+
 ```elm
-import Nld exposing (topK, tuple2, word)
+import Nld exposing (topK, tuple3, words, word)
 import Set
 
--- Get completion suggestions for what could come next
-topK 5 (word "buy") []
--- Returns: [ Set containing "buy" ]
+-- A three-part command: verb -> object -> modifier
+-- Each position supports synonyms
+parser =
+    tuple3
+        (words [ "buy", "sell" ])
+        (words [ "apple", "orange" ])
+        (word "now")
 
--- Autocomplete explores the parse tree deeply
--- After matching "buy", suggests "apples"
-topK 5 (tuple2 (word "buy") (word "apples")) [ "buy" ]
--- Returns: [ Set containing "apples" ]
+-- Empty input: suggests verbs (with synonyms)
+topK 3 parser []
+-- [ Set.fromList [ "buy", "sell" ] ]
+
+-- After verb: suggests objects
+topK 3 parser [ "buy" ]
+-- [ Set.fromList [ "apple", "orange" ] ]
+
+-- After verb + object: suggests modifier
+topK 3 parser [ "buy", "apple" ]
+-- [ Set.fromList [ "now" ] ]
+
+-- Complete parse: no suggestions needed
+topK 3 parser [ "buy", "apple", "now" ]
+-- []
 ```
+
+The autocomplete explores the parse tree lazily, finding the next tokens needed at each step. Combined with order-independence, users can type `apple buy` and still get `now` as the suggestion.
 
 ## Modules
 
