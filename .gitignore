@@ -3,3 +3,5 @@ node_modules/
 tests/VerifyExamples
 .reference/
 .claude/
+daemon.log
+daemon.lock

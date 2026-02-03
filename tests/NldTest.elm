@@ -1,7 +1,7 @@
 module NldTest exposing (suite)
 
 import Expect
-import Nld exposing (choice, map, map2, nat, repeat, runList, runTake, succeed, token, tokenMatching, topK, tuple2, tuple3, word, words)
+import Nld exposing (andMap, choice, map, map2, nat, repeat, runList, runTake, succeed, token, tokenMatching, topK, tuple2, tuple3, word, words)
 import Peach
 import Set
 import Test exposing (Test, describe, test)
@@ -114,6 +114,60 @@ suite =
                     runList (map2 (\_ b -> b) (succeed "ignored") (word "b")) [ "b" ]
                         |> List.map Tuple.second
                         |> Expect.equal [ "b" ]
+            ]
+        , describe "andMap"
+            [ test "applies function parser to value parser" <|
+                \() ->
+                    runList
+                        (succeed String.toUpper
+                            |> andMap (word "hello")
+                        )
+                        [ "hello" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ "HELLO" ]
+            , test "chains multiple parsers with pipe syntax" <|
+                \() ->
+                    runList
+                        (succeed (\a b -> a ++ "-" ++ b)
+                            |> andMap (word "hello")
+                            |> andMap (word "world")
+                        )
+                        [ "hello", "world" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ "hello-world" ]
+            , test "works with 4+ fields using records" <|
+                \() ->
+                    let
+                        parser =
+                            succeed (\a b c d -> { w = a, x = b, y = c, z = d })
+                                |> andMap (word "a")
+                                |> andMap (word "b")
+                                |> andMap (word "c")
+                                |> andMap (word "d")
+                    in
+                    runList parser [ "a", "b", "c", "d" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ { w = "a", x = "b", y = "c", z = "d" } ]
+            , test "handles out-of-order tokens" <|
+                \() ->
+                    runList
+                        (succeed Tuple.pair
+                            |> andMap (word "first")
+                            |> andMap (word "second")
+                        )
+                        [ "second", "first" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ ( "first", "second" ) ]
+            , test "works with default values via succeed" <|
+                \() ->
+                    runList
+                        (succeed Tuple.pair
+                            |> andMap (word "required")
+                            |> andMap (choice [ nat, succeed 0 ])
+                        )
+                        [ "required" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ ( "required", 0 ) ]
             ]
         , describe "map"
             [ test "transforms results" <|

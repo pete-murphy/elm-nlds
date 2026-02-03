@@ -3,7 +3,7 @@ module Nld exposing
     , run, runList, runTake
     , word, words, token, nat, tokenMatching, minimalToken
     , indexedWord, indexedWords, indexedToken, indexedNat, indexedTokenMatching
-    , succeed, map, map2, map3, andThen
+    , succeed, map, map2, map3, andThen, andMap
     , tuple2, tuple3
     , choice, repeat
     , autocomplete, topK
@@ -41,7 +41,7 @@ These return both the matched value and its position in the input.
 
 # Transforming and Combining
 
-@docs succeed, map, map2, map3, andThen
+@docs succeed, map, map2, map3, andThen, andMap
 @docs tuple2, tuple3
 
 
@@ -606,6 +606,35 @@ andThen f nld =
                     k tp lastPos
                         |> Peach.map (andThen f)
                 )
+
+
+{-| Apply a parser producing a function to a parser producing a value.
+
+This enables pipe-style composition for building parsers with arbitrary arity:
+
+    type alias Command =
+        { action : String
+        , target : String
+        , count : Int
+        , force : Bool
+        }
+
+    commandParser : Nld Command
+    commandParser =
+        succeed Command
+            |> andMap (word "delete")
+            |> andMap token
+            |> andMap nat
+            |> andMap (choice [ map (\_ -> True) (word "force"), succeed False ])
+
+    runList commandParser [ "delete", "file.txt", "3", "force" ]
+        |> List.map Tuple.second
+    --> [ { action = "delete", target = "file.txt", count = 3, force = True } ]
+
+-}
+andMap : Nld a -> Nld (a -> b) -> Nld b
+andMap nldA nldFn =
+    map2 (\fn a -> fn a) nldFn nldA
 
 
 {-| Try multiple parsers and return all successful parses.
