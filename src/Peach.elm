@@ -11,10 +11,6 @@ module Peach exposing
 `Peach` is similar to `Each` but expands branches with smaller weights first.
 It allows you to explore multiple possibilities, prioritizing by weight.
 
-**Laziness:** Unlike a simple heap, `Peach` supports lazy evaluation. Results
-are computed on-demand as you extract them with `head`, `take`, or `toList`.
-This enables efficient exploration of large or infinite search spaces.
-
 
 # Core Types
 

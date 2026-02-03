@@ -15,7 +15,7 @@ module Nld exposing
 
   - Ignoring irrelevant tokens
   - Allowing tokens to appear in any order (preferring specified order)
-  - Producing results in priority order
+  - Lazily producing results in priority order
 
 Unlike traditional parser combinators, `Nld` is robust to reordering and
 alternate phrasings, making it ideal for parsing natural language input.
@@ -62,7 +62,7 @@ import Set exposing (Set)
 
 
 {-| An `Nld a` is a parser that produces values of type `a` from a sequence of tokens.
-It explores multiple parse branches, preferring matches where tokens appear
+It explores multiple parse branches lazily, preferring matches where tokens appear
 in the specified order and closer together.
 -}
 type Nld a

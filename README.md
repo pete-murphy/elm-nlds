@@ -33,7 +33,7 @@ runTake 1 deleteCommand [ "please", "remove", "the", "file" ]
 
 3. **Synonym support** - Define synonyms that canonicalize to a single value. "delete", "remove", and "rm" all become "delete".
 
-4. **Ranked results** - Results are produced in priority order. Better matches (correct order, fewer gaps) come first.
+4. **Ranked results** - Results are lazily produced in priority order. Better matches (correct order, fewer gaps) come first.
 
 5. **Autocomplete-ready** - Get suggestions for what tokens would complete a partial parse.
 
@@ -124,16 +124,6 @@ topK 5 (tuple2 (word "buy") (word "apples")) [ "buy" ]
 
 - **`Nld`** - The main parser type and combinators
 - **`Peach`** - Lazy priority search data structure (used internally, but exposed for advanced use)
-
-## Architecture
-
-### Lazy Evaluation
-
-Both `Nld` and `Peach` use lazy evaluation to efficiently explore large search spaces:
-
-- **`Peach`** maintains a priority queue of thunks (suspended computations) that are only evaluated when results are extracted
-- **`Nld.autocomplete`** walks the parse tree lazily, finding suggestions at failure points without exploring unnecessary branches
-- Use `take n` to extract only the first `n` results without computing the rest
 
 ## Attribution
 
