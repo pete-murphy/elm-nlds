@@ -10,6 +10,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-02-02
+
+### Fixed
+
+- Removed inaccurate "lazily" claims from documentation. The Elm port evaluates eagerly (unlike the original Unison implementation).
+
 ## [1.0.0] - 2026-02-02
 
 Initial release. This is an Elm port of Paul Chiusano's Unison libraries
@@ -23,7 +29,7 @@ Initial release. This is an Elm port of Paul Chiusano's Unison libraries
 A flexible parser for loosely ordered token sequences that:
 - Ignores irrelevant tokens
 - Allows tokens to appear in any order (preferring specified order)
-- Lazily produces results in priority order
+- Produces results in priority order
 
 **Token Matchers:**
 - `word` - Match a specific word

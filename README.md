@@ -33,7 +33,7 @@ runTake 1 deleteCommand [ "please", "remove", "the", "file" ]
 
 3. **Synonym support** - Define synonyms that canonicalize to a single value. "delete", "remove", and "rm" all become "delete".
 
-4. **Ranked results** - Results are lazily produced in priority order. Better matches (correct order, fewer gaps) come first.
+4. **Ranked results** - Results are produced in priority order. Better matches (correct order, fewer gaps) come first.
 
 5. **Autocomplete-ready** - Get suggestions for what tokens would complete a partial parse.
 

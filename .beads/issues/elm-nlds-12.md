@@ -2,7 +2,7 @@
 
 - **ID:** elm-nlds-12
 - **Type:** task
-- **Status:** open
+- **Status:** closed
 - **Priority:** 2 (medium)
 - **Created:** 2026-02-02
 - **Blocked-by:** elm-nlds-1, elm-nlds-2, elm-nlds-4
