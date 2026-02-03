@@ -3,7 +3,7 @@ module Nld exposing
     , run, runList, runTake
     , word, words, token, nat, tokenMatching, minimalToken
     , indexedWord, indexedWords, indexedToken, indexedNat, indexedTokenMatching
-    , map, map2, map3, andThen
+    , succeed, map, map2, map3, andThen
     , tuple2, tuple3
     , choice, repeat
     , autocomplete, topK
@@ -41,7 +41,7 @@ These return both the matched value and its position in the input.
 
 # Transforming and Combining
 
-@docs map, map2, map3, andThen
+@docs succeed, map, map2, map3, andThen
 @docs tuple2, tuple3
 
 
@@ -511,6 +511,31 @@ indexedTokenMatching pred =
 
 
 -- COMBINATORS
+
+
+{-| A parser that always succeeds with the given value without consuming any tokens.
+
+This is the fundamental building block for applicative-style parsing with `andMap`.
+
+    runList (succeed 42) [ "any", "tokens" ]
+        |> List.map Tuple.second
+    --> [ 42 ]
+
+    -- Use with choice for default values:
+    runList (choice [ nat, succeed 1 ]) [ "not-a-number" ]
+        |> List.map Tuple.second
+    --> [ 1 ]
+
+-}
+succeed : a -> Nld a
+succeed a =
+    -- Use More with empty wanted set so it integrates properly with
+    -- the continuation-based parsing. The thunk immediately returns
+    -- Done with the value and preserves the current token positions.
+    More Set.empty
+        (\tp lastPos ->
+            Peach.peach [ ( 0.0, Done a tp lastPos ) ]
+        )
 
 
 {-| Transform the result of a parser.

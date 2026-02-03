@@ -1,7 +1,7 @@
 module NldTest exposing (suite)
 
 import Expect
-import Nld exposing (choice, map, map2, nat, repeat, runList, runTake, token, tokenMatching, topK, tuple2, tuple3, word, words)
+import Nld exposing (choice, map, map2, nat, repeat, runList, runTake, succeed, token, tokenMatching, topK, tuple2, tuple3, word, words)
 import Peach
 import Set
 import Test exposing (Test, describe, test)
@@ -85,6 +85,35 @@ suite =
                     runTake 1 (repeat (word "x")) [ "a", "b" ]
                         |> List.map Tuple.second
                         |> Expect.equal [ [] ]
+            ]
+        , describe "succeed"
+            [ test "always succeeds with the given value" <|
+                \() ->
+                    runList (succeed 42) [ "any", "tokens" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ 42 ]
+            , test "has weight 0" <|
+                \() ->
+                    runList (succeed "hello") []
+                        |> List.head
+                        |> Maybe.map Tuple.first
+                        |> Expect.equal (Just 0)
+            , test "works with choice as default value" <|
+                \() ->
+                    runList (choice [ nat, succeed 1 ]) [ "not-a-number" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ 1 ]
+            , test "works in sequence with other parsers" <|
+                \() ->
+                    runList (tuple2 (word "hello") (succeed "default")) [ "hello" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ ( "hello", "default" ) ]
+            , test "preserves token positions for subsequent parsers" <|
+                \() ->
+                    -- succeed should not consume tokens, so word "b" can still match
+                    runList (map2 (\_ b -> b) (succeed "ignored") (word "b")) [ "b" ]
+                        |> List.map Tuple.second
+                        |> Expect.equal [ "b" ]
             ]
         , describe "map"
             [ test "transforms results" <|
