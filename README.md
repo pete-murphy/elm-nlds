@@ -107,22 +107,38 @@ tuple2 (word "add") (repeat nat)
 ### Autocomplete
 
 ```elm
-import Nld exposing (topK, word)
+import Nld exposing (topK, tuple2, word)
 import Set
 
 -- Get completion suggestions for what could come next
 topK 5 (word "buy") []
 -- Returns: [ Set containing "buy" ]
+
+-- Autocomplete explores the parse tree deeply
+-- After matching "buy", suggests "apples"
+topK 5 (tuple2 (word "buy") (word "apples")) [ "buy" ]
+-- Returns: [ Set containing "apples" ]
 ```
 
 ## Modules
 
 - **`Nld`** - The main parser type and combinators
-- **`Peach`** - Priority search data structure (used internally, but exposed for advanced use)
+- **`Peach`** - Lazy priority search data structure (used internally, but exposed for advanced use)
+
+## Architecture
+
+### Lazy Evaluation
+
+Both `Nld` and `Peach` use lazy evaluation to efficiently explore large search spaces:
+
+- **`Peach`** maintains a priority queue of thunks (suspended computations) that are only evaluated when results are extracted
+- **`Nld.autocomplete`** walks the parse tree lazily, finding suggestions at failure points without exploring unnecessary branches
+- Use `take n` to extract only the first `n` results without computing the rest
 
 ## Attribution
 
 This is an Elm port of Paul Chiusano's Unison libraries:
+
 - [pchiusano/nlds](https://share.unison-lang.org/@pchiusano/nlds) - Natural Language Disambiguator
 - [pchiusano/peachy](https://share.unison-lang.org/@pchiusano/peachy) - Priority search
 

@@ -1,15 +1,19 @@
 module Peach exposing
     ( Peach
-    , peach, fail
+    , peach, fail, succeed, lazy
     , map, flatMap, choose
     , head, toList, take
     , rankBy, each, optional
     )
 
-{-| A priority search data structure, ported from Unison's `pchiusano/peachy` library.
+{-| A lazy priority search data structure, ported from Unison's `pchiusano/peachy` library.
 
 `Peach` is similar to `Each` but expands branches with smaller weights first.
 It allows you to explore multiple possibilities, prioritizing by weight.
+
+**Laziness:** Unlike a simple heap, `Peach` supports lazy evaluation. Results
+are computed on-demand as you extract them with `head`, `take`, or `toList`.
+This enables efficient exploration of large or infinite search spaces.
 
 
 # Core Types
@@ -19,7 +23,7 @@ It allows you to explore multiple possibilities, prioritizing by weight.
 
 # Primitive Operations
 
-@docs peach, fail
+@docs peach, fail, succeed, lazy
 
 
 # Combinators
@@ -41,14 +45,53 @@ It allows you to explore multiple possibilities, prioritizing by weight.
 import Heap exposing (Heap)
 
 
-{-| A `Peach a` represents a priority search computation that can yield
+{-| A `Peach a` represents a lazy priority search computation that can yield
 multiple weighted results. Results with smaller weights are explored first.
 
-Internally, this is represented as a heap of weighted values.
+Internally, this is represented as a priority queue of either:
+
+  - Concrete weighted values
+  - Thunks that produce more `Peach` elements when forced
+
+This allows lazy evaluation: results are only computed when extracted.
 
 -}
 type Peach a
-    = Peach (Heap ( Float, a ))
+    = Peach (Heap (PeachItem a))
+
+
+{-| An item in the priority queue: either a value or a suspended computation.
+-}
+type PeachItem a
+    = Value Float a
+    | Thunk Float (() -> Peach a)
+
+
+{-| Get the weight of a PeachItem for heap ordering.
+-}
+itemWeight : PeachItem a -> Float
+itemWeight item =
+    case item of
+        Value w _ ->
+            w
+
+        Thunk w _ ->
+            w
+
+
+{-| Create heap options for our priority queue.
+-}
+heapOptions : Heap.Options (PeachItem a)
+heapOptions =
+    Heap.smallest
+        |> Heap.by itemWeight
+
+
+{-| Create an empty Peach.
+-}
+emptyHeap : Heap (PeachItem a)
+emptyHeap =
+    Heap.empty heapOptions
 
 
 {-| Create a `Peach` from a list of weighted values. The values will be explored
@@ -61,12 +104,8 @@ in order of increasing weight (smallest first).
 -}
 peach : List ( Float, a ) -> Peach a
 peach weightedValues =
-    let
-        heapOptions =
-            Heap.smallest
-                |> Heap.by Tuple.first
-    in
     weightedValues
+        |> List.map (\( w, a ) -> Value w a)
         |> Heap.fromList heapOptions
         |> Peach
 
@@ -80,12 +119,35 @@ peach weightedValues =
 -}
 fail : Peach a
 fail =
-    let
-        heapOptions =
-            Heap.smallest
-                |> Heap.by Tuple.first
-    in
-    Heap.empty heapOptions
+    Peach emptyHeap
+
+
+{-| A `Peach` that yields exactly one result with weight 0.
+
+    succeed "hello"
+        |> head
+    --> Just ( 0.0, "hello" )
+
+-}
+succeed : a -> Peach a
+succeed a =
+    peach [ ( 0.0, a ) ]
+
+
+{-| Create a lazy `Peach` from a thunk. The thunk will only be evaluated
+when results are extracted. This is the key primitive for lazy evaluation.
+
+    lazy 0.0 (\() -> peach [ ( 1.0, "computed" ) ])
+        |> head
+    --> Just ( 1.0, "computed" )
+
+The first argument is the minimum possible weight of results from this thunk.
+This is used for priority ordering - thunks with lower weights are forced first.
+
+-}
+lazy : Float -> (() -> Peach a) -> Peach a
+lazy weight thunk =
+    Heap.fromList heapOptions [ Thunk weight thunk ]
         |> Peach
 
 
@@ -96,20 +158,25 @@ fail =
         |> toList
     --> [ ( 1.0, 4 ), ( 2.0, 6 ) ]
 
+Note: `map` is lazy - it wraps transformations in thunks for deferred items.
+
 -}
 map : (a -> b) -> Peach a -> Peach b
 map f (Peach heap) =
     let
-        heapOptions =
-            Heap.smallest
-                |> Heap.by Tuple.first
+        mapItem : PeachItem a -> PeachItem b
+        mapItem item =
+            case item of
+                Value w a ->
+                    Value w (f a)
 
-        mappedHeap =
-            Heap.toList heap
-                |> List.map (Tuple.mapSecond f)
-                |> Heap.fromList heapOptions
+                Thunk w thunk ->
+                    Thunk w (\() -> map f (thunk ()))
     in
-    Peach mappedHeap
+    Heap.toList heap
+        |> List.map mapItem
+        |> Heap.fromList (Heap.smallest |> Heap.by itemWeight)
+        |> Peach
 
 
 {-| Chain computations where the second depends on the result of the first.
@@ -117,33 +184,48 @@ The weights are combined additively.
 
     peach [ ( 1.0, "a" ), ( 2.0, "b" ) ]
         |> flatMap (\x -> peach [ ( 0.5, x ++ "1" ), ( 1.0, x ++ "2" ) ])
-        |> toList
+        |> take 4
     --> [ ( 1.5, "a1" ), ( 2.0, "a2" ), ( 2.5, "b1" ), ( 3.0, "b2" ) ]
+
+**Laziness:** `flatMap` is lazy - it doesn't immediately evaluate all branches.
+Instead, it creates thunks that are evaluated on-demand as results are extracted.
 
 -}
 flatMap : (a -> Peach b) -> Peach a -> Peach b
 flatMap f (Peach heap) =
     let
-        heapOptions =
-            Heap.smallest
-                |> Heap.by Tuple.first
+        -- Convert each item in the input to items for the output
+        convertItem : PeachItem a -> PeachItem b
+        convertItem item =
+            case item of
+                Value w a ->
+                    -- Create a thunk that will apply f when forced
+                    Thunk w (\() -> addWeight w (f a))
 
-        -- For each (weight, value) in the input, apply f to get a Peach b,
-        -- then add the original weight to all results
-        flattenedItems =
-            Heap.toList heap
-                |> List.concatMap
-                    (\( w1, a ) ->
-                        let
-                            (Peach innerHeap) =
-                                f a
-                        in
-                        Heap.toList innerHeap
-                            |> List.map (\( w2, b ) -> ( w1 + w2, b ))
-                    )
+                Thunk w thunk ->
+                    -- Create a thunk that will flatMap over the result
+                    Thunk w (\() -> flatMap f (thunk ()))
+
+        -- Add weight to all items in a Peach
+        addWeight : Float -> Peach b -> Peach b
+        addWeight extraWeight (Peach h) =
+            Heap.toList h
+                |> List.map (addWeightToItem extraWeight)
+                |> Heap.fromList (Heap.smallest |> Heap.by itemWeight)
+                |> Peach
+
+        addWeightToItem : Float -> PeachItem b -> PeachItem b
+        addWeightToItem extraWeight item =
+            case item of
+                Value w b ->
+                    Value (w + extraWeight) b
+
+                Thunk w thunk ->
+                    Thunk (w + extraWeight) (\() -> addWeight extraWeight (thunk ()))
     in
-    flattenedItems
-        |> Heap.fromList heapOptions
+    Heap.toList heap
+        |> List.map convertItem
+        |> Heap.fromList (Heap.smallest |> Heap.by itemWeight)
         |> Peach
 
 
@@ -161,20 +243,18 @@ flatMap f (Peach heap) =
 choose : List (Peach a) -> Peach a
 choose peaches =
     let
-        heapOptions =
-            Heap.smallest
-                |> Heap.by Tuple.first
-
-        combineHeaps : Peach a -> Heap ( Float, a ) -> Heap ( Float, a )
+        combineHeaps : Peach a -> Heap (PeachItem a) -> Heap (PeachItem a)
         combineHeaps (Peach heap) acc =
             Heap.toList heap
-                |> List.foldl (\item -> Heap.push item) acc
+                |> List.foldl Heap.push acc
     in
-    List.foldl combineHeaps (Heap.empty heapOptions) peaches
+    List.foldl combineHeaps emptyHeap peaches
         |> Peach
 
 
 {-| Get the first (lowest weight) result from a `Peach` computation, if any.
+
+This forces evaluation of thunks as needed to find the minimum-weight value.
 
     peach [ ( 2.0, "b" ), ( 1.0, "a" ) ]
         |> head
@@ -186,11 +266,14 @@ choose peaches =
 
 -}
 head : Peach a -> Maybe ( Float, a )
-head (Peach heap) =
-    Heap.peek heap
+head p =
+    take 1 p |> List.head
 
 
 {-| Convert a `Peach` computation to a list of all results, ordered by weight (smallest first).
+
+**Warning:** This forces evaluation of all thunks. For infinite or very large
+search spaces, use `take` instead.
 
     peach [ ( 2.0, "b" ), ( 1.0, "a" ), ( 3.0, "c" ) ]
         |> toList
@@ -198,11 +281,15 @@ head (Peach heap) =
 
 -}
 toList : Peach a -> List ( Float, a )
-toList (Peach heap) =
-    Heap.toList heap
+toList p =
+    -- Use a large number; in practice this should be bounded
+    take 10000 p
 
 
 {-| Take the first `n` results from a `Peach` computation, ordered by weight.
+
+This is the primary way to extract results lazily. Only the minimum number
+of thunks needed to produce `n` results will be evaluated.
 
     peach [ ( 2.0, "b" ), ( 1.0, "a" ), ( 3.0, "c" ) ]
         |> take 2
@@ -210,22 +297,36 @@ toList (Peach heap) =
 
 -}
 take : Int -> Peach a -> List ( Float, a )
-take n (Peach heap) =
+take n (Peach initialHeap) =
     let
-        go : Int -> Heap ( Float, a ) -> List ( Float, a ) -> List ( Float, a )
-        go remaining h acc =
-            if remaining <= 0 || Heap.isEmpty h then
+        go : Int -> Heap (PeachItem a) -> List ( Float, a ) -> List ( Float, a )
+        go remaining heap acc =
+            if remaining <= 0 then
                 List.reverse acc
 
             else
-                case Heap.pop h of
+                case Heap.pop heap of
                     Nothing ->
                         List.reverse acc
 
-                    Just ( ( w, a ), rest ) ->
-                        go (remaining - 1) rest (( w, a ) :: acc)
+                    Just ( item, rest ) ->
+                        case item of
+                            Value w a ->
+                                go (remaining - 1) rest (( w, a ) :: acc)
+
+                            Thunk _ thunk ->
+                                -- Force the thunk and merge its results into the heap
+                                let
+                                    (Peach thunkHeap) =
+                                        thunk ()
+
+                                    mergedHeap =
+                                        Heap.toList thunkHeap
+                                            |> List.foldl Heap.push rest
+                                in
+                                go remaining mergedHeap acc
     in
-    go n heap []
+    go n initialHeap []
 
 
 {-| Rank values by a function and create a `Peach` from them.

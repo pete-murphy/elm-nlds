@@ -659,6 +659,9 @@ Returns a list of sets of tokens that could complete the parse.
     topK 5 (tuple2 (word "buy") (word "apples")) [ "buy" ]
     -- Returns [ Set.fromList [ "apples" ] ]
 
+This explores the parse tree lazily, finding all points where the parser
+needs tokens that aren't present in the input.
+
 -}
 topK : Int -> Nld a -> List String -> List (Set String)
 topK n nld tokens =
@@ -668,22 +671,86 @@ topK n nld tokens =
 
 
 {-| Get autocomplete suggestions as a Peach.
+
+This walks the parse tree, collecting suggestions at every point where
+the parser fails due to missing tokens. The result is a lazy stream
+of suggestion sets, ordered by parse weight.
+
 -}
 autocomplete : Nld a -> TokenPositions -> Peach (Set String)
-autocomplete nld _ =
+autocomplete nld tp =
+    autocompleteHelper nld tp 0 Set.empty
+
+
+{-| Internal helper for autocomplete that tracks current state.
+
+  - `nld`: The current parser state
+  - `tp`: Remaining token positions
+  - `lastPos`: Last matched position
+  - `accumulated`: Tokens we've been looking for along this path
+
+-}
+autocompleteHelper : Nld a -> TokenPositions -> Int -> Set String -> Peach (Set String)
+autocompleteHelper nld tp lastPos accumulated =
     case nld of
         Done _ _ _ ->
-            -- Parse succeeded, no suggestions needed
+            -- Parse succeeded, no suggestions needed at this branch
             Peach.fail
 
-        More wanted _ ->
-            -- Return the wanted tokens as suggestions
-            if Set.isEmpty wanted then
-                -- This parser wants any token, so no specific suggestions
-                Peach.fail
+        More wanted k ->
+            let
+                -- Try to continue parsing
+                continuation =
+                    k tp lastPos
 
-            else
-                Peach.peach [ ( 0, wanted ) ]
+                -- Extract concrete results and explore them
+                exploreResults =
+                    Peach.lazy 0
+                        (\() ->
+                            -- Use flatMap to explore each result from the continuation
+                            continuation
+                                |> Peach.flatMap
+                                    (\nextNld ->
+                                        case nextNld of
+                                            Done _ _ _ ->
+                                                -- This branch succeeded, no suggestions
+                                                Peach.fail
+
+                                            More nextWanted nextK ->
+                                                -- Continue exploring
+                                                autocompleteHelper
+                                                    (More nextWanted nextK)
+                                                    tp
+                                                    lastPos
+                                                    (Set.union accumulated nextWanted)
+                                    )
+                        )
+
+                -- Check if the continuation produces any results
+                -- If not, we've hit a failure point - emit suggestions
+                emitSuggestions =
+                    let
+                        newAccumulated =
+                            Set.union accumulated wanted
+                    in
+                    if Set.isEmpty newAccumulated then
+                        Peach.fail
+
+                    else
+                        -- Use lazy to defer checking if continuation is empty
+                        Peach.lazy 0
+                            (\() ->
+                                case Peach.head continuation of
+                                    Nothing ->
+                                        -- Continuation is empty - this is a failure point
+                                        Peach.peach [ ( 0, newAccumulated ) ]
+
+                                    Just _ ->
+                                        -- Continuation has results, don't emit here
+                                        Peach.fail
+                            )
+            in
+            Peach.choose [ emitSuggestions, exploreResults ]
 
 
 
