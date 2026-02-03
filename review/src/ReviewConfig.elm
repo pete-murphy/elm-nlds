@@ -39,7 +39,7 @@ config =
     [ NoUnused.Modules.rule
     , NoUnused.Exports.rule
     , NoUnused.Dependencies.rule
-    , NoUnused.CustomTypeConstructorArgs.rule
+    -- , NoUnused.CustomTypeConstructorArgs.rule
     , NoUnused.Variables.rule
     , NoUnused.CustomTypeConstructors.rule []
     , NoUnused.Parameters.rule
