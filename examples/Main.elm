@@ -704,8 +704,10 @@ view model =
     Html.main_ []
         [ Html.h1 [] [ Html.text "Nlds Activity Parser" ]
         , Html.section []
-            [ Html.h2 [] [ Html.text "Parse from input" ]
-            , Html.p [] [ Html.text "Type an activity and see the best match." ]
+            [ Html.header []
+                [ Html.h2 [] [ Html.text "Parse from user input" ]
+                , Html.p [] [ Html.text "Type an activity and see the best match." ]
+                ]
             , Html.div []
                 [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
                 , Html.input

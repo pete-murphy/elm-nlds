@@ -88,7 +88,7 @@
             const { date, time } = this._dateTime;
             const dateTime = new Date(`${date} ${time}`);
             this.innerHTML = new Intl.DateTimeFormat(undefined, {
-              dateStyle: "long",
+              dateStyle: "medium",
               timeStyle: "short",
             }).format(dateTime);
           }

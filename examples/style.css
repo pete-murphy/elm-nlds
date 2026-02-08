@@ -11,12 +11,15 @@
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
   padding: 1rem;
 }
 
 :root {
   color-scheme: light dark;
+  text-size-adjust: none;
+  hanging-punctuation: first allow-end last;
+
   --dark: oklch(0.25 0.025 80);
   --light: oklch(0.75 0.025 80);
   --darker: oklch(0.15 0.025 80);
@@ -56,7 +59,7 @@ select {
 
 /* Layout */
 main {
-  margin: 1rem auto;
+  margin: 0 auto;
   display: grid;
   gap: 2rem;
   max-width: 40rem;
@@ -67,18 +70,19 @@ section {
   gap: 1rem;
 }
 
-h1 {
-  font-size: 2rem;
+h1, h2 {
   letter-spacing: -0.02em;
   font-stretch: expanded;
+  margin: 0;
+}
+h1 {
+  font-size: 2rem;
 }
 h2 {
   font-size: 1.5rem;
-  font-stretch: expanded;
-  letter-spacing: -0.02em;
-  & + p {
-    color: var(--on-surface-dim);
-  }
+}
+header p {
+  color: var(--on-surface-dim);
 }
 
 div:is(:has(input), :has(output)) {
@@ -107,6 +111,60 @@ output {
   border-radius: 0.5rem;
   background: var(--surface-dim);
   min-height: 2.75rem;
-  display: flex;
   align-items: center;
+  & > div {
+    display: grid;
+  }
+}
+
+dl {
+  display: grid;
+}
+
+duration-format {
+  &::before {
+    content: "⏰ ";
+    display: inline-block;
+    white-space-collapse: preserve;
+  }
+}
+date-time-format {
+  &::before {
+    content: "📅 ";
+    display: inline-block;
+    white-space-collapse: preserve;
+  }
+}
+
+dl {
+  display: grid;
+  gap: 1rem;
+}
+
+dt {
+  font-weight: 600;
+  &::before {
+    content: "“";
+    display: inline-block;
+    color: var(--on-surface-dim);
+  }
+  &::after {
+    content: "”";
+    display: inline-block;
+    color: var(--on-surface-dim);
+  }
+}
+
+dd {
+  font-size: 0.875rem;
+  &::before {
+    content: "→";
+    display: inline-block;
+    color: var(--on-surface-dim);
+    padding-left: 1ch;
+  }
+  & > div {
+    display: inline-grid;
+    padding-left: 1ch;
+  }
 }
