@@ -8,8 +8,10 @@ import Date
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Html.Events as Events
+import Json.Encode
 import Nld exposing (Nld)
 import Time exposing (Month(..), Weekday(..))
+
 
 
 -- DOMAIN MODEL
@@ -71,6 +73,7 @@ type alias ParsedActivity =
     }
 
 
+
 -- ACTIVITY SYNONYMS
 
 
@@ -81,6 +84,7 @@ activitySynonyms =
     , ( Swimming, [ "swim", "swimming", "swam", "laps" ] )
     , ( Yoga, [ "yoga" ] )
     ]
+
 
 
 -- NLDS PARSERS
@@ -100,10 +104,10 @@ activityParser =
 timeOfDayParser : Nld TimeOfDay
 timeOfDayParser =
     Nld.choice
-        [ Nld.map (\_ -> Morning) (Nld.words [ "morning", "am" ])
+        [ Nld.map (\_ -> Morning) (Nld.word "morning")
         , Nld.map (\_ -> Afternoon) (Nld.word "afternoon")
         , Nld.map (\_ -> Evening) (Nld.word "evening")
-        , Nld.map (\_ -> Night) (Nld.words [ "night", "pm" ])
+        , Nld.map (\_ -> Night) (Nld.word "night")
         , Nld.map (\_ -> Noon) (Nld.word "noon")
         ]
 
@@ -265,6 +269,7 @@ parseClockToken tok =
             Nothing
 
 
+
 -- Duration parsers
 
 
@@ -294,6 +299,7 @@ simpleDurationParser =
         ]
 
 
+
 -- Combined parsers
 
 
@@ -307,6 +313,7 @@ activityWithTime =
     Nld.tuple2 activityParser timeParser
 
 
+
 -- Main parsing function
 
 
@@ -317,7 +324,8 @@ splitTimeTokens tok =
             String.dropRight 2 tok
 
         isClockPrefix str =
-            String.length str > 0
+            String.length str
+                > 0
                 && String.all (\c -> Char.isDigit c || c == ':') str
                 && String.any Char.isDigit str
     in
@@ -340,6 +348,9 @@ parseActivitySmart input =
                 |> String.words
                 |> List.filter (\t -> t /= "")
                 |> List.concatMap splitTimeTokens
+
+        _ =
+            Debug.log "tokens" tokens
 
         withAllThree =
             Nld.runTake 5
@@ -393,8 +404,15 @@ parseActivitySmart input =
                     activityParser
                 )
                 tokens
+
+        results =
+            withAllThree ++ withDurationOnly ++ withTimeOnly ++ activityOnly
+
+        _ =
+            results
+                |> List.map (Debug.log "result")
     in
-    withAllThree ++ withDurationOnly ++ withTimeOnly ++ activityOnly
+    results
 
 
 scoreTimeSpec : TimeSpec -> Int
@@ -472,38 +490,8 @@ parseBestActivity input =
                     Nothing
 
 
+
 -- DISPLAY FUNCTIONS
-
-
-activityToString : Activity -> String
-activityToString activity =
-    case activity of
-        Cycling ->
-            "Cycling"
-
-        Swimming ->
-            "Swimming"
-
-        Running ->
-            "Running"
-
-        Yoga ->
-            "Yoga"
-
-
-durationToString : Duration -> String
-durationToString minutes =
-    if minutes < 60 then
-        String.fromInt minutes ++ " minutes"
-
-    else if minutes == 60 then
-        "1 hour"
-
-    else if modBy 60 minutes == 0 then
-        String.fromInt (minutes // 60) ++ " hours"
-
-    else
-        String.fromInt (minutes // 60) ++ " hours " ++ String.fromInt (modBy 60 minutes) ++ " minutes"
 
 
 type alias ClockTime =
@@ -519,52 +507,28 @@ type alias ResolvedDateTime =
     }
 
 
-bestMatchText : Maybe ParsedActivity -> String
-bestMatchText best =
-    case best of
-        Nothing ->
-            "No match yet"
-
-        Just parsed ->
-            let
-                duration =
-                    parsed.duration |> Maybe.withDefault 30
-
-                resolved =
-                    resolveDateTime parsed.timeSpec
-            in
-            activityToString parsed.activity
-                ++ "; "
-                ++ durationToString duration
-                ++ "; "
-                ++ formatDateTime resolved
-
-
-resolveDateTime : Maybe TimeSpec -> ResolvedDateTime
-resolveDateTime maybeSpec =
+resolveDateTime :
+    ResolvedDateTime
+    -> Maybe TimeSpec
+    -> { date : Date.Date, time : ClockTime }
+resolveDateTime base maybeSpec =
     let
-        baseDate =
-            Date.fromCalendarDate 2026 Feb 3
-
-        baseTime =
-            { hour = 3, minute = 45, meridiem = PM }
-
         defaultDetail =
             { day = Today, timeOfDay = Just Noon, clock = Nothing }
     in
     case maybeSpec of
         Nothing ->
-            { date = baseDate
+            { date = base.date
             , time = clockFromDetail defaultDetail
             }
 
         Just Now ->
-            { date = baseDate
-            , time = baseTime
+            { date = base.date
+            , time = base.time
             }
 
         Just (TimeDetail detail) ->
-            { date = resolveDay baseDate detail.day
+            { date = resolveDay base.date detail.day
             , time = clockFromDetail detail
             }
 
@@ -589,7 +553,7 @@ resolveDay baseDate daySpec =
                 delta =
                     modBy 7 (baseIndex - targetIndex)
             in
-            Date.add Date.Days (-delta) baseDate
+            Date.add Date.Days -delta baseDate
 
 
 clockFromDetail : TimeDetailData -> ClockTime
@@ -653,37 +617,38 @@ meridiemForTimeOfDay tod =
             PM
 
 
-formatDateTime : ResolvedDateTime -> String
-formatDateTime resolved =
-    Date.format "MMM d, y" resolved.date
-        ++ ", "
-        ++ formatClock resolved.time
-        ++ " ET"
-
-
 formatClock : ClockTime -> String
 formatClock clock =
     let
         minuteString =
             String.fromInt clock.minute |> String.padLeft 2 '0'
 
-        meridiemString =
+        hourString =
             case clock.meridiem of
                 AM ->
-                    "AM"
+                    String.fromInt clock.hour
 
                 PM ->
-                    "PM"
+                    String.fromInt (clock.hour + 12)
     in
-    String.fromInt clock.hour ++ ":" ++ minuteString ++ " " ++ meridiemString
+    hourString ++ ":" ++ minuteString
+
 
 
 -- MODEL/UPDATE/VIEW
 
 
+type alias Flags =
+    { year : Int
+    , dayOfYear : Int
+    , hour : Int
+    , minute : Int
+    }
+
+
 type alias Model =
     { input : String
-    , best : Maybe ParsedActivity
+    , baseDateTime : ResolvedDateTime
     }
 
 
@@ -691,57 +656,171 @@ type Msg
     = InputChanged String
 
 
-initialModel : Model
-initialModel =
-    { input = ""
-    , best = Nothing
-    }
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+    let
+        baseDate =
+            Date.fromOrdinalDate flags.year flags.dayOfYear
+
+        ( hour12, meridiem ) =
+            if flags.hour == 0 then
+                ( 12, AM )
+
+            else if flags.hour < 12 then
+                ( flags.hour, AM )
+
+            else if flags.hour == 12 then
+                ( 12, PM )
+
+            else
+                ( flags.hour - 12, PM )
+
+        baseTime =
+            { hour = hour12, minute = flags.minute, meridiem = meridiem }
+    in
+    ( { input = ""
+      , baseDateTime =
+            { date = baseDate
+            , time = baseTime
+            }
+      }
+    , Cmd.none
+    )
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         InputChanged newInput ->
-            { model
+            ( { model
                 | input = newInput
-                , best = parseBestActivity newInput
-            }
+              }
+            , Cmd.none
+            )
 
 
 view : Model -> Html Msg
 view model =
-    Html.div [ Attr.class "page" ]
-        [ Html.h1 [ Attr.class "title" ] [ Html.text "NLDS Activity Parser" ]
-        , Html.p [ Attr.class "subtitle" ] [ Html.text "Type an activity and see the best match." ]
-        , Html.div [ Attr.class "field" ]
-            [ Html.label [ Attr.class "label", Attr.for "activity-input" ] [ Html.text "Activity" ]
-            , Html.input
-                [ Attr.id "activity-input"
-                , Attr.class "input"
-                , Attr.type_ "text"
-                , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
-                , Attr.value model.input
-                , Events.onInput InputChanged
+    Html.main_ []
+        [ Html.h1 [] [ Html.text "Nlds Activity Parser" ]
+        , Html.section []
+            [ Html.h2 [] [ Html.text "Parse from input" ]
+            , Html.p [] [ Html.text "Type an activity and see the best match." ]
+            , Html.div []
+                [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
+                , Html.input
+                    [ Attr.id "activity-input"
+                    , Attr.type_ "text"
+                    , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
+                    , Attr.value model.input
+                    , Events.onInput InputChanged
+                    ]
+                    []
                 ]
-                []
+            , Html.div []
+                [ Html.label [ Attr.for "best-output" ] [ Html.text "Best match" ]
+                , Html.node "output"
+                    [ Attr.id "best-output"
+                    , Attr.attribute "for" "activity-input"
+                    , Attr.attribute "aria-live" "polite"
+                    ]
+                    [ viewBestMatch model.baseDateTime model.input ]
+                ]
             ]
-        , Html.div [ Attr.class "result" ]
-            [ Html.label [ Attr.class "label", Attr.for "best-output" ] [ Html.text "Best match" ]
-            , Html.node "output"
-                [ Attr.id "best-output"
-                , Attr.class "output"
-                , Attr.attribute "for" "activity-input"
-                , Attr.attribute "aria-live" "polite"
-                ]
-                [ Html.text (bestMatchText model.best) ]
+        , Html.section []
+            [ Html.h2 [] [ Html.text "Examples" ]
+            , Html.dl []
+                (examples
+                    |> List.map
+                        (\example ->
+                            Html.div []
+                                [ Html.dt [] [ Html.text example ]
+                                , Html.dd [] [ viewBestMatch model.baseDateTime example ]
+                                ]
+                        )
+                )
             ]
         ]
 
 
-main : Program () Model Msg
+examples : List String
+examples =
+    [ "ran for 30 minutes yesterday morning"
+    , "just went for a jog"
+    , "swam for an hour on Thursday"
+    , "bike ride, tues 3:30pm"
+    , "yoga 3pm"
+    ]
+
+
+main : Program Flags Model Msg
 main =
-    Browser.sandbox
-        { init = initialModel
+    Browser.element
+        { init = init
         , view = view
         , update = update
+        , subscriptions = \_ -> Sub.none
         }
+
+
+viewDuration : Duration -> Html msg
+viewDuration duration =
+    let
+        hours =
+            duration // 60
+
+        minutes =
+            modBy 60 duration
+    in
+    Html.node "duration-format"
+        [ Attr.property "duration" (Json.Encode.object [ ( "hours", Json.Encode.int hours ), ( "minutes", Json.Encode.int minutes ) ])
+        ]
+        []
+
+
+viewDateTime : ResolvedDateTime -> Html msg
+viewDateTime dateTime =
+    Html.node "date-time-format"
+        [ Attr.property "dateTime" (Json.Encode.object [ ( "date", Json.Encode.string (Date.format "MMM d, y" dateTime.date) ), ( "time", Json.Encode.string (formatClock dateTime.time) ) ])
+        ]
+        []
+
+
+viewActivity : Activity -> Html msg
+viewActivity activity =
+    case activity of
+        Cycling ->
+            Html.text "🚴 Cycling"
+
+        Swimming ->
+            Html.text "🏊 Swimming"
+
+        Running ->
+            Html.text "🏃 Running"
+
+        Yoga ->
+            Html.text "🧘 Yoga"
+
+
+viewBestMatch :
+    ResolvedDateTime
+    -> String
+    -> Html msg
+viewBestMatch base input =
+    case parseBestActivity input of
+        Nothing ->
+            Html.text "No match yet"
+
+        Just parsed ->
+            let
+                duration =
+                    parsed.duration |> Maybe.withDefault 30
+
+                resolved =
+                    resolveDateTime base parsed.timeSpec
+            in
+            Html.div []
+                [ viewActivity parsed.activity
+                , viewDuration duration
+                , viewDateTime resolved
+                ]

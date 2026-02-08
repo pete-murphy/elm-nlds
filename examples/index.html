@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NLDS Activity Parser</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="main.js"></script>
+    <script>
+      function getDateTime() {
+        // Get current date/time info for Elm flags
+        const now = new Date();
+
+        // Calculate day of year (1-366)
+        const startOfYear = new Date(now.getFullYear(), 0, 0);
+        const diff = now - startOfYear;
+        const oneDay = 1000 * 60 * 60 * 24;
+        const dayOfYear = Math.floor(diff / oneDay);
+
+        return {
+          year: now.getFullYear(),
+          dayOfYear: dayOfYear,
+          hour: now.getHours(),
+          minute: now.getMinutes(),
+        };
+      }
+
+      const flags = getDateTime();
+
+      customElements.define(
+        "duration-format",
+        class DurationFormat extends HTMLElement {
+          constructor() {
+            super();
+          }
+
+          get duration() {
+            return this._duration;
+          }
+
+          set duration(value) {
+            const oldValue = this._duration;
+            this._duration = value;
+            this.propertyChangedCallback("duration", oldValue, value);
+          }
+
+          propertyChangedCallback(prop, oldVal, newVal) {
+            if (oldVal !== newVal) {
+              this.render();
+            }
+          }
+
+          render() {
+            this.innerHTML = new Intl.DurationFormat(undefined, {
+              style: "long",
+            }).format(this._duration);
+          }
+        },
+      );
+
+      customElements.define(
+        "date-time-format",
+        class DateTimeFormat extends HTMLElement {
+          constructor() {
+            super();
+          }
+
+          get dateTime() {
+            return this._dateTime;
+          }
+
+          set dateTime(value) {
+            const oldValue = this._dateTime;
+            this._dateTime = value;
+            this.propertyChangedCallback("dateTime", oldValue, value);
+          }
+
+          propertyChangedCallback(prop, oldVal, newVal) {
+            if (oldVal !== newVal) {
+              this.render();
+            }
+          }
+
+          render() {
+            const { date, time } = this._dateTime;
+            const dateTime = new Date(`${date} ${time}`);
+            this.innerHTML = new Intl.DateTimeFormat(undefined, {
+              dateStyle: "long",
+              timeStyle: "short",
+            }).format(dateTime);
+          }
+        },
+      );
+
+      Elm.Main.init({
+        node: document.getElementById("app"),
+        flags: flags,
+      });
+    </script>
+  </body>
+</html>
