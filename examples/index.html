@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NLDs Activity Parser</title>
     <link rel="stylesheet" href="style.css" />
+    <script type="module" crossorigin src="https://unpkg.com/@github/relative-time-element@5.0.0/dist/index.js"></script>
   </head>
   <body>
     <div id="app"></div>
@@ -88,13 +89,44 @@
             const { date, time } = this._dateTime;
             const dateTime = new Date(`${date} ${time}`);
             this.innerHTML = new Intl.DateTimeFormat(undefined, {
-              weekday: "short", // Mon, Tue, Wed, ...
-              // year: "numeric", // 2026
-              month: "short", // Feb
-              day: "numeric", // 9
+              weekday: "short",
+              month: "short",
+              day: "numeric",
               hour: "numeric",
               minute: "2-digit",
             }).format(dateTime);
+          }
+        },
+      );
+
+      customElements.define(
+        "relative-time-format",
+        class RelativeTimeFormat extends HTMLElement {
+          constructor() {
+            super();
+          }
+
+          get dateTime() {
+            return this._dateTime;
+          }
+
+          set dateTime(value) {
+            const oldValue = this._dateTime;
+            this._dateTime = value;
+            this.propertyChangedCallback("dateTime", oldValue, value);
+          }
+
+          propertyChangedCallback(prop, oldVal, newVal) {
+            if (oldVal !== newVal) {
+              this.render();
+            }
+          }
+          
+          render() {
+            const { date, time } = this._dateTime;
+            const dateTime = new Date(`${date} ${time}`);
+            console.log(dateTime.toISOString());
+            this.innerHTML = `<relative-time datetime="${dateTime.toISOString()}"></relative-time>`;
           }
         },
       );

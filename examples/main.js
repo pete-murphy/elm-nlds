@@ -6947,7 +6947,6 @@ var $author$project$Nld$indexedNat = $author$project$Nld$indexedTokenFilterMap(
 			$elm$core$String$toInt(t));
 	});
 var $author$project$Nld$nat = A2($author$project$Nld$map, $elm$core$Tuple$first, $author$project$Nld$indexedNat);
-var $author$project$Nld$tuple2 = $author$project$Nld$map2($elm$core$Tuple$pair);
 var $elm$core$Dict$isEmpty = function (dict) {
 	if (dict.$ === 'RBEmpty_elm_builtin') {
 		return true;
@@ -7006,29 +7005,30 @@ var $author$project$Nld$word = function (w) {
 		$elm$core$Tuple$first,
 		$author$project$Nld$indexedWord(w));
 };
+var $author$project$Main$numberWordsParser = $author$project$Nld$choice(
+	A2(
+		$elm$core$List$map,
+		function (_v0) {
+			var n = _v0.a;
+			var word = _v0.b;
+			return A2(
+				$author$project$Nld$map,
+				function (_v1) {
+					return n;
+				},
+				$author$project$Nld$word(word));
+		},
+		_List_fromArray(
+			[
+				_Utils_Tuple2(1, 'one'),
+				_Utils_Tuple2(2, 'two'),
+				_Utils_Tuple2(3, 'three'),
+				_Utils_Tuple2(4, 'four'),
+				_Utils_Tuple2(5, 'five'),
+				_Utils_Tuple2(10, 'ten')
+			])));
+var $author$project$Nld$tuple2 = $author$project$Nld$map2($elm$core$Tuple$pair);
 var $author$project$Main$minutesParser = function () {
-	var numberWords = $author$project$Nld$choice(
-		A2(
-			$elm$core$List$map,
-			function (_v15) {
-				var n = _v15.a;
-				var word = _v15.b;
-				return A2(
-					$author$project$Nld$map,
-					function (_v16) {
-						return n;
-					},
-					$author$project$Nld$word(word));
-			},
-			_List_fromArray(
-				[
-					_Utils_Tuple2(1, 'one'),
-					_Utils_Tuple2(2, 'two'),
-					_Utils_Tuple2(3, 'three'),
-					_Utils_Tuple2(4, 'four'),
-					_Utils_Tuple2(5, 'five'),
-					_Utils_Tuple2(10, 'ten')
-				])));
 	var minutes = $author$project$Nld$words(
 		_List_fromArray(
 			['minutes', 'minute', 'mins', 'min']));
@@ -7106,7 +7106,7 @@ var $author$project$Main$minutesParser = function () {
 					function (n, _v13) {
 						return n * 60;
 					}),
-				numberWords,
+				$author$project$Main$numberWordsParser,
 				hours),
 				A3(
 				$author$project$Nld$map2,
@@ -7114,7 +7114,7 @@ var $author$project$Main$minutesParser = function () {
 					function (n, _v14) {
 						return n;
 					}),
-				numberWords,
+				$author$project$Main$numberWordsParser,
 				minutes)
 			]));
 }();
@@ -7155,20 +7155,20 @@ var $author$project$Main$clockTimeFromString = F2(
 				if (A2($elm$core$String$endsWith, 'am', tok) || A2($elm$core$String$endsWith, 'a', tok)) {
 					return $author$project$Main$Am;
 				} else {
-					var _v4 = _Utils_Tuple2(
+					var _v3 = _Utils_Tuple2(
 						_Utils_cmp(
 							A2($elm$core$Basics$modBy, 12, hour),
 							A2($elm$core$Basics$modBy, 12, currentTime.hour)) < 0,
 						currentTime.meridiem);
-					if (_v4.a) {
-						var m = _v4.b;
+					if (_v3.a) {
+						var m = _v3.b;
 						return m;
 					} else {
-						if (_v4.b.$ === 'Am') {
-							var _v5 = _v4.b;
+						if (_v3.b.$ === 'Am') {
+							var _v4 = _v3.b;
 							return $author$project$Main$Pm;
 						} else {
-							var _v6 = _v4.b;
+							var _v5 = _v3.b;
 							return $author$project$Main$Am;
 						}
 					}
@@ -7207,18 +7207,13 @@ var $author$project$Main$clockTimeFromString = F2(
 					}
 				} else {
 					var bare = _v0.a;
-					if (A2($elm$core$String$all, $elm$core$Char$isDigit, bare)) {
-						return $elm$core$Maybe$Nothing;
-					} else {
-						var _v3 = $elm$core$String$toInt(
-							A2($elm$core$String$filter, $elm$core$Char$isDigit, bare));
-						if (_v3.$ === 'Just') {
-							var hour = _v3.a;
+					return A2($elm$core$String$all, $elm$core$Char$isDigit, bare) ? $elm$core$Maybe$Nothing : A2(
+						$elm$core$Maybe$andThen,
+						function (hour) {
 							return A2(toTime, hour, 0);
-						} else {
-							return $elm$core$Maybe$Nothing;
-						}
-					}
+						},
+						$elm$core$String$toInt(
+							A2($elm$core$String$filter, $elm$core$Char$isDigit, bare)));
 				}
 			} else {
 				break _v0$2;
@@ -7382,16 +7377,25 @@ var $author$project$Main$whenParser = function (currentTime) {
 						_List_fromArray(
 							['days', 'day'])),
 					$author$project$Nld$word('ago')),
+					A4(
+					$author$project$Nld$map3,
+					F3(
+						function (days, _v3, _v4) {
+							return A2($author$project$Main$DaysAgo, days, parsedTime);
+						}),
+					$author$project$Main$numberWordsParser,
+					$author$project$Nld$word('days'),
+					$author$project$Nld$word('ago')),
 					A2(
 					$author$project$Nld$map,
-					function (_v3) {
+					function (_v5) {
 						return A2($author$project$Main$DaysAgo, 1, parsedTime);
 					},
 					$author$project$Nld$word('yesterday')),
 					A3(
 					$author$project$Nld$map2,
 					F2(
-						function (_v4, _v5) {
+						function (_v6, _v7) {
 							return A2($author$project$Main$DaysAgo, 1, parsedTime);
 						}),
 					$author$project$Nld$word('last'),
@@ -7399,7 +7403,7 @@ var $author$project$Main$whenParser = function (currentTime) {
 					A3(
 					$author$project$Nld$map2,
 					F2(
-						function (mins, _v6) {
+						function (mins, _v8) {
 							return $author$project$Main$MinutesAgo(mins);
 						}),
 					$author$project$Main$minutesParser,
@@ -7671,13 +7675,12 @@ var $author$project$Main$tokenize = function (input) {
 var $author$project$Main$parseActivity = F2(
 	function (currentTime, input) {
 		var tokens = $author$project$Main$tokenize(input);
-		var _v0 = A2($elm$core$Debug$log, 'tokens', tokens);
 		return A2(
 			$elm$core$List$map,
 			$elm$core$Debug$log('entry'),
 			A2(
 				$elm$core$Debug$log,
-				'results',
+				'parsed',
 				A2(
 					$elm$core$List$sortBy,
 					$author$project$Main$scoreEntry,
@@ -9077,28 +9080,40 @@ var $elm$virtual_dom$VirtualDom$property = F2(
 	});
 var $elm$html$Html$Attributes$property = $elm$virtual_dom$VirtualDom$property;
 var $author$project$Main$viewDateTime = function (dateTime) {
-	return A3(
-		$elm$html$Html$node,
-		'date-time-format',
+	var encoded = $elm$json$Json$Encode$object(
 		_List_fromArray(
 			[
-				A2(
-				$elm$html$Html$Attributes$property,
-				'dateTime',
-				$elm$json$Json$Encode$object(
-					_List_fromArray(
-						[
-							_Utils_Tuple2(
-							'date',
-							$elm$json$Json$Encode$string(
-								A2($justinmimbs$date$Date$format, 'MMM d, y', dateTime.date))),
-							_Utils_Tuple2(
-							'time',
-							$elm$json$Json$Encode$string(
-								$author$project$Main$formatTime(dateTime.time)))
-						])))
-			]),
-		_List_Nil);
+				_Utils_Tuple2(
+				'date',
+				$elm$json$Json$Encode$string(
+					A2($justinmimbs$date$Date$format, 'MMM d, y', dateTime.date))),
+				_Utils_Tuple2(
+				'time',
+				$elm$json$Json$Encode$string(
+					$author$project$Main$formatTime(dateTime.time)))
+			]));
+	return A2(
+		$elm$html$Html$div,
+		_List_Nil,
+		_List_fromArray(
+			[
+				A3(
+				$elm$html$Html$node,
+				'date-time-format',
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$property, 'dateTime', encoded)
+					]),
+				_List_Nil),
+				A3(
+				$elm$html$Html$node,
+				'relative-time-format',
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$property, 'dateTime', encoded)
+					]),
+				_List_Nil)
+			]));
 };
 var $elm$json$Json$Encode$int = _Json_wrap;
 var $author$project$Main$viewMinutes = function (minutes) {
@@ -9156,36 +9171,42 @@ var $author$project$Main$view = function (model) {
 		_List_fromArray(
 			[
 				A2(
-				$elm$html$Html$h1,
-				_List_Nil,
-				_List_fromArray(
-					[
-						$elm$html$Html$text('Nlds Activity Parser')
-					])),
-				A2(
-				$elm$html$Html$section,
+				$elm$html$Html$header,
 				_List_Nil,
 				_List_fromArray(
 					[
 						A2(
-						$elm$html$Html$header,
+						$elm$html$Html$h1,
 						_List_Nil,
 						_List_fromArray(
 							[
-								A2(
-								$elm$html$Html$h2,
-								_List_Nil,
-								_List_fromArray(
-									[
-										$elm$html$Html$text('Parse from user input')
-									])),
-								A2(
-								$elm$html$Html$p,
-								_List_Nil,
-								_List_fromArray(
-									[
-										$elm$html$Html$text('Type an activity and see the best match.')
-									]))
+								$elm$html$Html$text('Activity Parser')
+							])),
+						A2(
+						$elm$html$Html$p,
+						_List_Nil,
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Natural language activity entry, powered by elm-nlds.')
+							]))
+					])),
+				A2(
+				$elm$html$Html$section,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$attribute, 'aria-labelledby', 'input-heading')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$h2,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$id('input-heading')
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Try it')
 							])),
 						A2(
 						$elm$html$Html$div,
@@ -9210,6 +9231,7 @@ var $author$project$Main$view = function (model) {
 										$elm$html$Html$Attributes$type_('text'),
 										$elm$html$Html$Attributes$placeholder('e.g., ran for 30 minutes yesterday morning'),
 										$elm$html$Html$Attributes$value(model.input),
+										A2($elm$html$Html$Attributes$attribute, 'autocomplete', 'off'),
 										$elm$html$Html$Events$onInput($author$project$Main$InputChanged)
 									]),
 								_List_Nil)
@@ -9246,12 +9268,18 @@ var $author$project$Main$view = function (model) {
 					])),
 				A2(
 				$elm$html$Html$section,
-				_List_Nil,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$attribute, 'aria-labelledby', 'examples-heading')
+					]),
 				_List_fromArray(
 					[
 						A2(
 						$elm$html$Html$h2,
-						_List_Nil,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$id('examples-heading')
+							]),
 						_List_fromArray(
 							[
 								$elm$html$Html$text('Examples')

@@ -80,6 +80,19 @@ activityParser =
         )
 
 
+numberWordsParser : Nld Int
+numberWordsParser =
+    [ ( 1, "one" )
+    , ( 2, "two" )
+    , ( 3, "three" )
+    , ( 4, "four" )
+    , ( 5, "five" )
+    , ( 10, "ten" )
+    ]
+        |> List.map (\( n, word ) -> Nld.map (\_ -> n) (Nld.word word))
+        |> Nld.choice
+
+
 minutesParser : Nld Int
 minutesParser =
     let
@@ -94,17 +107,6 @@ minutesParser =
 
         and =
             Nld.words [ "and", "&" ]
-
-        numberWords =
-            [ ( 1, "one" )
-            , ( 2, "two" )
-            , ( 3, "three" )
-            , ( 4, "four" )
-            , ( 5, "five" )
-            , ( 10, "ten" )
-            ]
-                |> List.map (\( n, word ) -> Nld.map (\_ -> n) (Nld.word word))
-                |> Nld.choice
     in
     Nld.choice
         [ Nld.map3 (\_ _ _ -> 30) (Nld.words [ "a", "an" ]) (Nld.word "half") (Nld.word "hour")
@@ -113,8 +115,8 @@ minutesParser =
         , Nld.map2 (\hrs _ -> hrs * 60) Nld.nat hours
         , Nld.map4 (\_ _ _ _ -> 90) anHour and (Nld.word "a") (Nld.word "half")
         , Nld.map (\_ -> 60) anHour
-        , Nld.map2 (\n _ -> n * 60) numberWords hours
-        , Nld.map2 (\n _ -> n) numberWords minutes
+        , Nld.map2 (\n _ -> n * 60) numberWordsParser hours
+        , Nld.map2 (\n _ -> n) numberWordsParser minutes
         ]
 
 
@@ -125,6 +127,7 @@ whenParser currentTime =
             Nld.choice
                 [ Nld.map (\_ -> Today parsedTime) (Nld.word "today")
                 , Nld.map3 (\days _ _ -> DaysAgo days parsedTime) Nld.nat (Nld.words [ "days", "day" ]) (Nld.word "ago")
+                , Nld.map3 (\days _ _ -> DaysAgo days parsedTime) numberWordsParser (Nld.word "days") (Nld.word "ago")
                 , Nld.map (\_ -> DaysAgo 1 parsedTime) (Nld.word "yesterday")
                 , Nld.map2 (\_ _ -> DaysAgo 1 parsedTime) (Nld.word "last") (Nld.word "night")
                 , Nld.map2 (\mins _ -> MinutesAgo mins) minutesParser (Nld.word "ago")
@@ -204,13 +207,10 @@ parseActivity currentTime input =
     let
         tokens =
             tokenize input
-
-        _ =
-            Debug.log "tokens" tokens
     in
     Nld.runTake 20 (activityEntryParser currentTime) tokens
         |> List.sortBy scoreEntry
-        |> Debug.log "results"
+        |> Debug.log "parsed"
         |> List.map (Debug.log "entry")
 
 
@@ -317,12 +317,12 @@ update msg model =
 view : Model -> Html Msg
 view model =
     Html.main_ []
-        [ Html.h1 [] [ Html.text "Nlds Activity Parser" ]
-        , Html.section []
-            [ Html.header []
-                [ Html.h2 [] [ Html.text "Parse from user input" ]
-                , Html.p [] [ Html.text "Type an activity and see the best match." ]
-                ]
+        [ Html.header []
+            [ Html.h1 [] [ Html.text "Activity Parser" ]
+            , Html.p [] [ Html.text "Natural language activity entry, powered by elm-nlds." ]
+            ]
+        , Html.section [ Attr.attribute "aria-labelledby" "input-heading" ]
+            [ Html.h2 [ Attr.id "input-heading" ] [ Html.text "Try it" ]
             , Html.div []
                 [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
                 , Html.input
@@ -330,6 +330,7 @@ view model =
                     , Attr.type_ "text"
                     , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
                     , Attr.value model.input
+                    , Attr.attribute "autocomplete" "off"
                     , Events.onInput InputChanged
                     ]
                     []
@@ -344,8 +345,8 @@ view model =
                     [ viewBestMatch model.now model.input ]
                 ]
             ]
-        , Html.section []
-            [ Html.h2 [] [ Html.text "Examples" ]
+        , Html.section [ Attr.attribute "aria-labelledby" "examples-heading" ]
+            [ Html.h2 [ Attr.id "examples-heading" ] [ Html.text "Examples" ]
             , Html.dl []
                 (examples
                     |> List.map
@@ -402,17 +403,17 @@ viewMinutes minutes =
 
 viewDateTime : DateTime -> Html msg
 viewDateTime dateTime =
-    Html.node "date-time-format"
-        [ Attr.property "dateTime"
-            (Json.Encode.object
-                [ ( "date"
-                  , Json.Encode.string (Date.format "MMM d, y" dateTime.date)
-                  )
+    let
+        encoded =
+            Json.Encode.object
+                [ ( "date", Json.Encode.string (Date.format "MMM d, y" dateTime.date) )
                 , ( "time", Json.Encode.string (formatTime dateTime.time) )
                 ]
-            )
+    in
+    Html.div []
+        [ Html.node "date-time-format" [ Attr.property "dateTime" encoded ] []
+        , Html.node "relative-time-format" [ Attr.property "dateTime" encoded ] []
         ]
-        []
 
 
 formatTime : Time -> String
