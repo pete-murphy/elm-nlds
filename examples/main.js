@@ -5510,7 +5510,7 @@ var $elm$html$Html$div = _VirtualDom_node('div');
 var $elm$html$Html$dl = _VirtualDom_node('dl');
 var $elm$html$Html$dt = _VirtualDom_node('dt');
 var $author$project$Main$examples = _List_fromArray(
-	['ran for 30 minutes yesterday morning', 'just went for a jog', 'swam for an hour on Thursday', 'bike ride, tues 3:30pm', 'yoga 3 pm']);
+	['ran for 45 minutes yesterday morning', 'just went for a jog', 'swam for an hour on Thursday', 'bike ride, tues 3:30pm', 'yoga 3 pm']);
 var $elm$json$Json$Encode$string = _Json_wrap;
 var $elm$html$Html$Attributes$stringProperty = F2(
 	function (key, string) {

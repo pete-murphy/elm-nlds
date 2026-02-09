@@ -327,7 +327,7 @@ view model =
 
 examples : List String
 examples =
-    [ "ran for 30 minutes yesterday morning"
+    [ "ran for 45 minutes yesterday morning"
     , "just went for a jog"
     , "swam for an hour on Thursday"
     , "bike ride, tues 3:30pm"
