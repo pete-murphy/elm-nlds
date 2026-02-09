@@ -4380,6 +4380,107 @@ function _Browser_load(url)
 }
 
 
+// CREATE
+
+var _Regex_never = /.^/;
+
+var _Regex_fromStringWith = F2(function(options, string)
+{
+	var flags = 'g';
+	if (options.multiline) { flags += 'm'; }
+	if (options.caseInsensitive) { flags += 'i'; }
+
+	try
+	{
+		return $elm$core$Maybe$Just(new RegExp(string, flags));
+	}
+	catch(error)
+	{
+		return $elm$core$Maybe$Nothing;
+	}
+});
+
+
+// USE
+
+var _Regex_contains = F2(function(re, string)
+{
+	return string.match(re) !== null;
+});
+
+
+var _Regex_findAtMost = F3(function(n, re, str)
+{
+	var out = [];
+	var number = 0;
+	var string = str;
+	var lastIndex = re.lastIndex;
+	var prevLastIndex = -1;
+	var result;
+	while (number++ < n && (result = re.exec(string)))
+	{
+		if (prevLastIndex == re.lastIndex) break;
+		var i = result.length - 1;
+		var subs = new Array(i);
+		while (i > 0)
+		{
+			var submatch = result[i];
+			subs[--i] = submatch
+				? $elm$core$Maybe$Just(submatch)
+				: $elm$core$Maybe$Nothing;
+		}
+		out.push(A4($elm$regex$Regex$Match, result[0], result.index, number, _List_fromArray(subs)));
+		prevLastIndex = re.lastIndex;
+	}
+	re.lastIndex = lastIndex;
+	return _List_fromArray(out);
+});
+
+
+var _Regex_replaceAtMost = F4(function(n, re, replacer, string)
+{
+	var count = 0;
+	function jsReplacer(match)
+	{
+		if (count++ >= n)
+		{
+			return match;
+		}
+		var i = arguments.length - 3;
+		var submatches = new Array(i);
+		while (i > 0)
+		{
+			var submatch = arguments[i];
+			submatches[--i] = submatch
+				? $elm$core$Maybe$Just(submatch)
+				: $elm$core$Maybe$Nothing;
+		}
+		return replacer(A4($elm$regex$Regex$Match, match, arguments[arguments.length - 2], count, _List_fromArray(submatches)));
+	}
+	return string.replace(re, jsReplacer);
+});
+
+var _Regex_splitAtMost = F3(function(n, re, str)
+{
+	var string = str;
+	var out = [];
+	var start = re.lastIndex;
+	var restoreLastIndex = re.lastIndex;
+	while (n--)
+	{
+		var result = re.exec(string);
+		if (!result) break;
+		out.push(string.slice(start, result.index));
+		start = re.lastIndex;
+	}
+	out.push(string.slice(start));
+	re.lastIndex = restoreLastIndex;
+	return _List_fromArray(out);
+});
+
+var _Regex_infinity = Infinity;
+
+
 
 var _Bitwise_and = F2(function(a, b)
 {
@@ -5336,8 +5437,8 @@ var $elm$core$Task$perform = F2(
 	});
 var $elm$browser$Browser$element = _Browser_element;
 var $elm$json$Json$Decode$field = _Json_decodeField;
-var $author$project$Main$AM = {$: 'AM'};
-var $author$project$Main$PM = {$: 'PM'};
+var $author$project$Main$Am = {$: 'Am'};
+var $author$project$Main$Pm = {$: 'Pm'};
 var $justinmimbs$date$Date$RD = function (a) {
 	return {$: 'RD', a: a};
 };
@@ -5368,15 +5469,16 @@ var $justinmimbs$date$Date$fromOrdinalDate = F2(
 var $elm$core$Platform$Cmd$batch = _Platform_batch;
 var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
 var $author$project$Main$init = function (flags) {
-	var baseDate = A2($justinmimbs$date$Date$fromOrdinalDate, flags.year, flags.dayOfYear);
-	var _v0 = (!flags.hour) ? _Utils_Tuple2(12, $author$project$Main$AM) : ((flags.hour < 12) ? _Utils_Tuple2(flags.hour, $author$project$Main$AM) : ((flags.hour === 12) ? _Utils_Tuple2(12, $author$project$Main$PM) : _Utils_Tuple2(flags.hour - 12, $author$project$Main$PM)));
-	var hour12 = _v0.a;
-	var meridiem = _v0.b;
-	var baseTime = {hour: hour12, meridiem: meridiem, minute: flags.minute};
+	var currentTime = {
+		hour: A2($elm$core$Basics$modBy, 12, flags.hour + 11) + 1,
+		meridiem: (flags.hour < 12) ? $author$project$Main$Am : $author$project$Main$Pm,
+		minute: flags.minute
+	};
+	var currentDate = A2($justinmimbs$date$Date$fromOrdinalDate, flags.year, flags.dayOfYear);
 	return _Utils_Tuple2(
 		{
-			baseDateTime: {date: baseDate, time: baseTime},
-			input: ''
+			input: '',
+			now: {date: currentDate, time: currentTime}
 		},
 		$elm$core$Platform$Cmd$none);
 };
@@ -5408,7 +5510,7 @@ var $elm$html$Html$div = _VirtualDom_node('div');
 var $elm$html$Html$dl = _VirtualDom_node('dl');
 var $elm$html$Html$dt = _VirtualDom_node('dt');
 var $author$project$Main$examples = _List_fromArray(
-	['ran for 30 minutes yesterday morning', 'just went for a jog', 'swam for an hour on Thursday', 'bike ride, tues 3:30pm', 'yoga 3pm']);
+	['ran for 30 minutes yesterday morning', 'just went for a jog', 'swam for an hour on Thursday', 'bike ride, tues 3:30pm', 'yoga 3 pm']);
 var $elm$json$Json$Encode$string = _Json_wrap;
 var $elm$html$Html$Attributes$stringProperty = F2(
 	function (key, string) {
@@ -5470,9 +5572,13 @@ var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
 var $elm$html$Html$Attributes$type_ = $elm$html$Html$Attributes$stringProperty('type');
 var $elm$html$Html$Attributes$value = $elm$html$Html$Attributes$stringProperty('value');
-var $elm$core$Basics$negate = function (n) {
-	return -n;
+var $author$project$Main$Today = function (a) {
+	return {$: 'Today', a: a};
 };
+var $author$project$Main$ActivityEntry = F3(
+	function (activity, when, minutes) {
+		return {activity: activity, minutes: minutes, when: when};
+	});
 var $author$project$Main$Cycling = {$: 'Cycling'};
 var $author$project$Main$Running = {$: 'Running'};
 var $author$project$Main$Swimming = {$: 'Swimming'};
@@ -6728,35 +6834,38 @@ var $author$project$Nld$map2 = F3(
 			},
 			nldA);
 	});
-var $elm$core$List$any = F2(
-	function (isOkay, list) {
-		any:
-		while (true) {
-			if (!list.b) {
-				return false;
-			} else {
-				var x = list.a;
-				var xs = list.b;
-				if (isOkay(x)) {
-					return true;
-				} else {
-					var $temp$isOkay = isOkay,
-						$temp$list = xs;
-					isOkay = $temp$isOkay;
-					list = $temp$list;
-					continue any;
-				}
-			}
-		}
-	});
-var $elm$core$List$member = F2(
-	function (x, xs) {
+var $author$project$Nld$map3 = F4(
+	function (f, nldA, nldB, nldC) {
 		return A2(
-			$elm$core$List$any,
+			$author$project$Nld$andThen,
 			function (a) {
-				return _Utils_eq(a, x);
+				return A3(
+					$author$project$Nld$map2,
+					F2(
+						function (b, c) {
+							return A3(f, a, b, c);
+						}),
+					nldB,
+					nldC);
 			},
-			xs);
+			nldA);
+	});
+var $author$project$Nld$map4 = F5(
+	function (f, nldA, nldB, nldC, nldD) {
+		return A2(
+			$author$project$Nld$andThen,
+			function (a) {
+				return A4(
+					$author$project$Nld$map3,
+					F3(
+						function (b, c, d) {
+							return A4(f, a, b, c, d);
+						}),
+					nldB,
+					nldC,
+					nldD);
+			},
+			nldA);
 	});
 var $elm$core$Maybe$andThen = F2(
 	function (callback, maybeValue) {
@@ -6785,7 +6894,7 @@ var $elm$core$List$filterMap = F2(
 			_List_Nil,
 			xs);
 	});
-var $author$project$Nld$indexedNat = function () {
+var $author$project$Nld$indexedTokenFilterMap = function (f) {
 	var k = F2(
 		function (tp, lastPos) {
 			var allPositions = A2(
@@ -6794,12 +6903,11 @@ var $author$project$Nld$indexedNat = function () {
 					var p = _v2.a;
 					var t = _v2.b;
 					return A2(
-						$elm$core$Maybe$andThen,
-						function (n) {
-							return (n >= 0) ? $elm$core$Maybe$Just(
-								_Utils_Tuple3(p, t, n)) : $elm$core$Maybe$Nothing;
+						$elm$core$Maybe$map,
+						function (a) {
+							return _Utils_Tuple3(p, t, a);
 						},
-						$elm$core$String$toInt(t));
+						f(t));
 				},
 				$elm$core$Dict$toList(tp.byPosition));
 			var weightedPositions = A2(
@@ -6807,10 +6915,10 @@ var $author$project$Nld$indexedNat = function () {
 				function (_v1) {
 					var p = _v1.a;
 					var t = _v1.b;
-					var n = _v1.c;
+					var a = _v1.c;
 					return _Utils_Tuple2(
 						A2($author$project$Nld$gapCost, lastPos, p),
-						_Utils_Tuple3(t, p, n));
+						_Utils_Tuple3(t, p, a));
 				},
 				allPositions);
 			return $elm$core$List$isEmpty(weightedPositions) ? $author$project$Peach$fail : A2(
@@ -6818,18 +6926,28 @@ var $author$project$Nld$indexedNat = function () {
 				function (_v0) {
 					var t = _v0.a;
 					var p = _v0.b;
-					var n = _v0.c;
+					var a = _v0.c;
 					return A3(
 						$author$project$Nld$Done,
-						_Utils_Tuple2(n, p),
+						_Utils_Tuple2(a, p),
 						A3($author$project$Nld$remove, t, p, tp),
 						p);
 				},
 				$author$project$Peach$peach(weightedPositions));
 		});
 	return A2($author$project$Nld$More, $elm$core$Set$empty, k);
-}();
+};
+var $author$project$Nld$indexedNat = $author$project$Nld$indexedTokenFilterMap(
+	function (t) {
+		return A2(
+			$elm$core$Maybe$andThen,
+			function (n) {
+				return (n >= 0) ? $elm$core$Maybe$Just(n) : $elm$core$Maybe$Nothing;
+			},
+			$elm$core$String$toInt(t));
+	});
 var $author$project$Nld$nat = A2($author$project$Nld$map, $elm$core$Tuple$first, $author$project$Nld$indexedNat);
+var $author$project$Nld$tuple2 = $author$project$Nld$map2($elm$core$Tuple$pair);
 var $elm$core$Dict$isEmpty = function (dict) {
 	if (dict.$ === 'RBEmpty_elm_builtin') {
 		return true;
@@ -6888,197 +7006,264 @@ var $author$project$Nld$word = function (w) {
 		$elm$core$Tuple$first,
 		$author$project$Nld$indexedWord(w));
 };
-var $author$project$Main$simpleDurationParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v0, _v1) {
-					return 30;
-				}),
-			$author$project$Nld$word('half'),
-			$author$project$Nld$words(
-				_List_fromArray(
-					['hour', 'hours', 'hr', 'hrs']))),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (n, unit) {
-					return A2(
-						$elm$core$List$member,
-						unit,
-						_List_fromArray(
-							['hour', 'hours', 'hr', 'hrs'])) ? (n * 60) : n;
-				}),
-			$author$project$Nld$nat,
-			$author$project$Nld$choice(
-				_List_fromArray(
-					[
-						$author$project$Nld$words(
-						_List_fromArray(
-							['hour', 'hours', 'hr', 'hrs'])),
-						$author$project$Nld$words(
-						_List_fromArray(
-							['minute', 'minutes', 'min', 'mins']))
-					]))),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v2, _v3) {
+var $author$project$Main$minutesParser = function () {
+	var numberWords = $author$project$Nld$choice(
+		A2(
+			$elm$core$List$map,
+			function (_v15) {
+				var n = _v15.a;
+				var word = _v15.b;
+				return A2(
+					$author$project$Nld$map,
+					function (_v16) {
+						return n;
+					},
+					$author$project$Nld$word(word));
+			},
+			_List_fromArray(
+				[
+					_Utils_Tuple2(1, 'one'),
+					_Utils_Tuple2(2, 'two'),
+					_Utils_Tuple2(3, 'three'),
+					_Utils_Tuple2(4, 'four'),
+					_Utils_Tuple2(5, 'five'),
+					_Utils_Tuple2(10, 'ten')
+				])));
+	var minutes = $author$project$Nld$words(
+		_List_fromArray(
+			['minutes', 'minute', 'mins', 'min']));
+	var hours = $author$project$Nld$words(
+		_List_fromArray(
+			['hours', 'hour', 'hrs', 'hr']));
+	var and = $author$project$Nld$words(
+		_List_fromArray(
+			['and', '&']));
+	var anHour = A2(
+		$author$project$Nld$tuple2,
+		$author$project$Nld$words(
+			_List_fromArray(
+				['an', 'a', 'one', '1'])),
+		$author$project$Nld$word('hour'));
+	return $author$project$Nld$choice(
+		_List_fromArray(
+			[
+				A4(
+				$author$project$Nld$map3,
+				F3(
+					function (_v0, _v1, _v2) {
+						return 30;
+					}),
+				$author$project$Nld$words(
+					_List_fromArray(
+						['a', 'an'])),
+				$author$project$Nld$word('half'),
+				$author$project$Nld$word('hour')),
+				A5(
+				$author$project$Nld$map4,
+				F4(
+					function (_v3, _v4, mins, _v5) {
+						return 60 + mins;
+					}),
+				anHour,
+				and,
+				$author$project$Nld$nat,
+				minutes),
+				A3(
+				$author$project$Nld$map2,
+				F2(
+					function (mins, _v6) {
+						return mins;
+					}),
+				$author$project$Nld$nat,
+				minutes),
+				A3(
+				$author$project$Nld$map2,
+				F2(
+					function (hrs, _v7) {
+						return hrs * 60;
+					}),
+				$author$project$Nld$nat,
+				hours),
+				A5(
+				$author$project$Nld$map4,
+				F4(
+					function (_v8, _v9, _v10, _v11) {
+						return 90;
+					}),
+				anHour,
+				and,
+				$author$project$Nld$word('a'),
+				$author$project$Nld$word('half')),
+				A2(
+				$author$project$Nld$map,
+				function (_v12) {
 					return 60;
-				}),
-			$author$project$Nld$words(
-				_List_fromArray(
-					['one', 'an'])),
-			$author$project$Nld$words(
-				_List_fromArray(
-					['hour', 'hours', 'hr', 'hrs'])))
-		]));
-var $author$project$Nld$tuple2 = $author$project$Nld$map2($elm$core$Tuple$pair);
-var $author$project$Main$activityWithDuration = A2($author$project$Nld$tuple2, $author$project$Main$activityParser, $author$project$Main$simpleDurationParser);
-var $author$project$Main$Now = {$: 'Now'};
-var $author$project$Main$TimeDetail = function (a) {
-	return {$: 'TimeDetail', a: a};
+				},
+				anHour),
+				A3(
+				$author$project$Nld$map2,
+				F2(
+					function (n, _v13) {
+						return n * 60;
+					}),
+				numberWords,
+				hours),
+				A3(
+				$author$project$Nld$map2,
+				F2(
+					function (n, _v14) {
+						return n;
+					}),
+				numberWords,
+				minutes)
+			]));
+}();
+var $author$project$Nld$succeed = function (a) {
+	return A2(
+		$author$project$Nld$More,
+		$elm$core$Set$empty,
+		F2(
+			function (tp, lastPos) {
+				return $author$project$Peach$peach(
+					_List_fromArray(
+						[
+							_Utils_Tuple2(
+							0.0,
+							A3($author$project$Nld$Done, a, tp, lastPos))
+						]));
+			}));
 };
-var $author$project$Main$Today = {$: 'Today'};
-var $author$project$Main$parseClockToken = function (tok) {
-	var _v0 = A2($elm$core$String$split, ':', tok);
-	if ((_v0.b && _v0.b.b) && (!_v0.b.b.b)) {
-		var hourStr = _v0.a;
-		var _v1 = _v0.b;
-		var minuteStr = _v1.a;
-		var _v2 = _Utils_Tuple2(
-			$elm$core$String$toInt(hourStr),
-			$elm$core$String$toInt(minuteStr));
-		if ((_v2.a.$ === 'Just') && (_v2.b.$ === 'Just')) {
-			var hour = _v2.a.a;
-			var minute = _v2.b.a;
-			return ((hour >= 1) && ((hour <= 12) && ((minute >= 0) && (minute < 60)))) ? $elm$core$Maybe$Just(
-				_Utils_Tuple2(hour, minute)) : $elm$core$Maybe$Nothing;
+var $author$project$Main$DaysAgo = F2(
+	function (a, b) {
+		return {$: 'DaysAgo', a: a, b: b};
+	});
+var $author$project$Main$MinutesAgo = function (a) {
+	return {$: 'MinutesAgo', a: a};
+};
+var $author$project$Main$OnDay = F2(
+	function (a, b) {
+		return {$: 'OnDay', a: a, b: b};
+	});
+var $elm$core$String$endsWith = _String_endsWith;
+var $elm$core$String$filter = _String_filter;
+var $author$project$Main$clockTimeFromString = F2(
+	function (currentTime, tok) {
+		var _v0 = A2($elm$core$String$split, ':', tok);
+		if ((_v0.b && _v0.b.b) && (!_v0.b.b.b)) {
+			var hourStr = _v0.a;
+			var _v1 = _v0.b;
+			var minuteStr = _v1.a;
+			var _v2 = _Utils_Tuple2(
+				$elm$core$String$toInt(hourStr),
+				$elm$core$String$toInt(
+					A2($elm$core$String$filter, $elm$core$Char$isDigit, minuteStr)));
+			if ((_v2.a.$ === 'Just') && (_v2.b.$ === 'Just')) {
+				var hour = _v2.a.a;
+				var minute = _v2.b.a;
+				var meridiem = function () {
+					if (A2($elm$core$String$endsWith, 'pm', tok) || A2($elm$core$String$endsWith, 'p', tok)) {
+						return $author$project$Main$Pm;
+					} else {
+						if (A2($elm$core$String$endsWith, 'am', tok) || A2($elm$core$String$endsWith, 'a', tok)) {
+							return $author$project$Main$Am;
+						} else {
+							var _v3 = _Utils_Tuple2(
+								_Utils_cmp(
+									A2($elm$core$Basics$modBy, 12, hour),
+									A2($elm$core$Basics$modBy, 12, currentTime.hour)) < 0,
+								currentTime.meridiem);
+							if (_v3.a) {
+								var m = _v3.b;
+								return m;
+							} else {
+								if (_v3.b.$ === 'Am') {
+									var _v4 = _v3.b;
+									return $author$project$Main$Pm;
+								} else {
+									var _v5 = _v3.b;
+									return $author$project$Main$Am;
+								}
+							}
+						}
+					}
+				}();
+				return ((hour >= 1) && ((hour <= 12) && ((minute >= 0) && (minute < 60)))) ? $elm$core$Maybe$Just(
+					{hour: hour, meridiem: meridiem, minute: minute}) : (((hour <= 24) && ((minute >= 0) && (minute < 60))) ? $elm$core$Maybe$Just(
+					{hour: hour - 12, meridiem: $author$project$Main$Pm, minute: minute}) : $elm$core$Maybe$Nothing);
+			} else {
+				return $elm$core$Maybe$Nothing;
+			}
 		} else {
 			return $elm$core$Maybe$Nothing;
 		}
-	} else {
-		return $elm$core$Maybe$Nothing;
-	}
-};
-var $author$project$Main$isClockToken = function (tok) {
-	var _v0 = $author$project$Main$parseClockToken(tok);
-	if (_v0.$ === 'Just') {
-		return true;
-	} else {
-		return false;
-	}
-};
-var $author$project$Nld$indexedTokenMatching = function (pred) {
-	var k = F2(
-		function (tp, lastPos) {
-			var allPositions = A2(
-				$elm$core$List$filter,
-				function (_v2) {
-					var t = _v2.b;
-					return pred(t);
-				},
-				$elm$core$Dict$toList(tp.byPosition));
-			var weightedPositions = A2(
-				$elm$core$List$map,
-				function (_v1) {
-					var p = _v1.a;
-					var t = _v1.b;
-					return _Utils_Tuple2(
-						A2($author$project$Nld$gapCost, lastPos, p),
-						_Utils_Tuple2(t, p));
-				},
-				allPositions);
-			return $elm$core$List$isEmpty(weightedPositions) ? $author$project$Peach$fail : A2(
-				$author$project$Peach$map,
-				function (_v0) {
-					var t = _v0.a;
-					var p = _v0.b;
-					return A3(
-						$author$project$Nld$Done,
-						_Utils_Tuple2(t, p),
-						A3($author$project$Nld$remove, t, p, tp),
-						p);
-				},
-				$author$project$Peach$peach(weightedPositions));
-		});
-	return A2($author$project$Nld$More, $elm$core$Set$empty, k);
-};
-var $author$project$Nld$tokenMatching = function (pred) {
+	});
+var $author$project$Nld$tokenFilterMap = function (f) {
 	return A2(
 		$author$project$Nld$map,
 		$elm$core$Tuple$first,
-		$author$project$Nld$indexedTokenMatching(pred));
+		$author$project$Nld$indexedTokenFilterMap(f));
 };
-var $author$project$Main$clockTokenParser = A2(
-	$author$project$Nld$map,
-	function (tok) {
-		return A2(
-			$elm$core$Maybe$withDefault,
-			_Utils_Tuple2(0, 0),
-			$author$project$Main$parseClockToken(tok));
-	},
-	$author$project$Nld$tokenMatching($author$project$Main$isClockToken));
-var $author$project$Main$meridiemParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A2(
-			$author$project$Nld$map,
-			function (_v0) {
-				return $author$project$Main$AM;
-			},
-			$author$project$Nld$word('am')),
-			A2(
-			$author$project$Nld$map,
-			function (_v1) {
-				return $author$project$Main$PM;
-			},
-			$author$project$Nld$word('pm'))
-		]));
-var $author$project$Main$clockParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v0, meridiem) {
-					var h = _v0.a;
-					var m = _v0.b;
-					return {
-						hour: h,
-						meridiem: $elm$core$Maybe$Just(meridiem),
-						minute: m
-					};
-				}),
-			$author$project$Main$clockTokenParser,
-			$author$project$Main$meridiemParser),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (h, meridiem) {
-					return {
-						hour: h,
-						meridiem: $elm$core$Maybe$Just(meridiem),
-						minute: 0
-					};
-				}),
-			$author$project$Nld$nat,
-			$author$project$Main$meridiemParser),
-			A2(
-			$author$project$Nld$map,
-			function (_v1) {
-				var h = _v1.a;
-				var m = _v1.b;
-				return {hour: h, meridiem: $elm$core$Maybe$Nothing, minute: m};
-			},
-			$author$project$Main$clockTokenParser)
-		]));
-var $author$project$Main$OnDay = function (a) {
-	return {$: 'OnDay', a: a};
+var $author$project$Main$timeParser = function (currentTime) {
+	var timeOfDayParser = A2(
+		$author$project$Nld$map,
+		function (_v5) {
+			var hour = _v5.a;
+			var meridiem = _v5.b;
+			return {hour: hour, meridiem: meridiem, minute: 0};
+		},
+		$author$project$Nld$choice(
+			_List_fromArray(
+				[
+					A2(
+					$author$project$Nld$map,
+					function (_v0) {
+						return _Utils_Tuple2(9, $author$project$Main$Am);
+					},
+					$author$project$Nld$word('morning')),
+					A2(
+					$author$project$Nld$map,
+					function (_v1) {
+						return _Utils_Tuple2(12, $author$project$Main$Pm);
+					},
+					$author$project$Nld$word('noon')),
+					A2(
+					$author$project$Nld$map,
+					function (_v2) {
+						return _Utils_Tuple2(3, $author$project$Main$Pm);
+					},
+					$author$project$Nld$word('afternoon')),
+					A2(
+					$author$project$Nld$map,
+					function (_v3) {
+						return _Utils_Tuple2(6, $author$project$Main$Pm);
+					},
+					$author$project$Nld$word('evening')),
+					A2(
+					$author$project$Nld$map,
+					function (_v4) {
+						return _Utils_Tuple2(9, $author$project$Main$Pm);
+					},
+					$author$project$Nld$word('night'))
+				])));
+	var clockTimeParser = $author$project$Nld$tokenFilterMap(
+		$author$project$Main$clockTimeFromString(currentTime));
+	return $author$project$Nld$choice(
+		_List_fromArray(
+			[
+				A3(
+				$author$project$Nld$map2,
+				F2(
+					function (clk, tod) {
+						return _Utils_update(
+							clk,
+							{meridiem: tod.meridiem});
+					}),
+				clockTimeParser,
+				timeOfDayParser),
+				clockTimeParser,
+				timeOfDayParser
+			]));
 };
-var $author$project$Main$Yesterday = {$: 'Yesterday'};
 var $elm$time$Time$Fri = {$: 'Fri'};
 var $elm$time$Time$Mon = {$: 'Mon'};
 var $elm$time$Time$Sat = {$: 'Sat'};
@@ -7086,7 +7271,7 @@ var $elm$time$Time$Sun = {$: 'Sun'};
 var $elm$time$Time$Thu = {$: 'Thu'};
 var $elm$time$Time$Tue = {$: 'Tue'};
 var $elm$time$Time$Wed = {$: 'Wed'};
-var $author$project$Main$dayOfWeekParser = $author$project$Nld$choice(
+var $author$project$Main$weekdayParser = $author$project$Nld$choice(
 	_List_fromArray(
 		[
 			A2(
@@ -7146,176 +7331,123 @@ var $author$project$Main$dayOfWeekParser = $author$project$Nld$choice(
 				_List_fromArray(
 					['sunday', 'sun'])))
 		]));
-var $author$project$Main$daySpecParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A2(
-			$author$project$Nld$map,
-			function (_v0) {
-				return $author$project$Main$Yesterday;
-			},
-			$author$project$Nld$word('yesterday')),
-			A2($author$project$Nld$map, $author$project$Main$OnDay, $author$project$Main$dayOfWeekParser)
-		]));
-var $author$project$Nld$succeed = function (a) {
-	return A2(
-		$author$project$Nld$More,
-		$elm$core$Set$empty,
-		F2(
-			function (tp, lastPos) {
-				return $author$project$Peach$peach(
-					_List_fromArray(
-						[
-							_Utils_Tuple2(
-							0.0,
-							A3($author$project$Nld$Done, a, tp, lastPos))
-						]));
-			}));
+var $author$project$Main$whenParser = function (currentTime) {
+	var whenParserHelp = function (parsedTime) {
+		return $author$project$Nld$choice(
+			_List_fromArray(
+				[
+					A2(
+					$author$project$Nld$map,
+					function (_v0) {
+						return $author$project$Main$Today(parsedTime);
+					},
+					$author$project$Nld$word('today')),
+					A4(
+					$author$project$Nld$map3,
+					F3(
+						function (days, _v1, _v2) {
+							return A2($author$project$Main$DaysAgo, days, parsedTime);
+						}),
+					$author$project$Nld$nat,
+					$author$project$Nld$words(
+						_List_fromArray(
+							['days', 'day'])),
+					$author$project$Nld$word('ago')),
+					A2(
+					$author$project$Nld$map,
+					function (_v3) {
+						return A2($author$project$Main$DaysAgo, 1, parsedTime);
+					},
+					$author$project$Nld$word('yesterday')),
+					A3(
+					$author$project$Nld$map2,
+					F2(
+						function (_v4, _v5) {
+							return A2($author$project$Main$DaysAgo, 1, parsedTime);
+						}),
+					$author$project$Nld$word('last'),
+					$author$project$Nld$word('night')),
+					A3(
+					$author$project$Nld$map2,
+					F2(
+						function (mins, _v6) {
+							return $author$project$Main$MinutesAgo(mins);
+						}),
+					$author$project$Main$minutesParser,
+					$author$project$Nld$word('ago')),
+					A2(
+					$author$project$Nld$map,
+					function (weekday) {
+						return A2($author$project$Main$OnDay, weekday, parsedTime);
+					},
+					$author$project$Main$weekdayParser)
+				]));
+	};
+	return $author$project$Nld$choice(
+		_List_fromArray(
+			[
+				A2(
+				$author$project$Nld$andThen,
+				function (parsedTime) {
+					return whenParserHelp(
+						$elm$core$Maybe$Just(parsedTime));
+				},
+				$author$project$Main$timeParser(currentTime)),
+				A2(
+				$author$project$Nld$map,
+				function (parsedTime) {
+					return $author$project$Main$Today(
+						$elm$core$Maybe$Just(parsedTime));
+				},
+				$author$project$Main$timeParser(currentTime)),
+				whenParserHelp($elm$core$Maybe$Nothing)
+			]));
 };
-var $author$project$Main$maybeClockParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A2($author$project$Nld$map, $elm$core$Maybe$Just, $author$project$Main$clockParser),
-			$author$project$Nld$succeed($elm$core$Maybe$Nothing)
-		]));
-var $author$project$Main$Night = {$: 'Night'};
-var $author$project$Main$Afternoon = {$: 'Afternoon'};
-var $author$project$Main$Evening = {$: 'Evening'};
-var $author$project$Main$Morning = {$: 'Morning'};
-var $author$project$Main$Noon = {$: 'Noon'};
-var $author$project$Main$timeOfDayParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A2(
-			$author$project$Nld$map,
-			function (_v0) {
-				return $author$project$Main$Morning;
-			},
-			$author$project$Nld$word('morning')),
-			A2(
-			$author$project$Nld$map,
-			function (_v1) {
-				return $author$project$Main$Afternoon;
-			},
-			$author$project$Nld$word('afternoon')),
-			A2(
-			$author$project$Nld$map,
-			function (_v2) {
-				return $author$project$Main$Evening;
-			},
-			$author$project$Nld$word('evening')),
-			A2(
-			$author$project$Nld$map,
-			function (_v3) {
-				return $author$project$Main$Night;
-			},
-			$author$project$Nld$word('night')),
-			A2(
-			$author$project$Nld$map,
-			function (_v4) {
-				return $author$project$Main$Noon;
-			},
-			$author$project$Nld$word('noon'))
-		]));
-var $author$project$Main$timeOfDayWithDayParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v0, _v1) {
-					return _Utils_Tuple2($author$project$Main$Yesterday, $author$project$Main$Night);
-				}),
-			$author$project$Nld$word('last'),
-			$author$project$Nld$word('night')),
-			A2(
-			$author$project$Nld$map,
-			function (_v2) {
-				return _Utils_Tuple2($author$project$Main$Today, $author$project$Main$Night);
-			},
-			$author$project$Nld$word('tonight')),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v3, tod) {
-					return _Utils_Tuple2($author$project$Main$Yesterday, tod);
-				}),
-			$author$project$Nld$word('yesterday'),
-			$author$project$Main$timeOfDayParser),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v4, tod) {
-					return _Utils_Tuple2($author$project$Main$Today, tod);
-				}),
-			$author$project$Nld$word('this'),
-			$author$project$Main$timeOfDayParser),
-			A2(
-			$author$project$Nld$map,
-			function (tod) {
-				return _Utils_Tuple2($author$project$Main$Today, tod);
-			},
-			$author$project$Main$timeOfDayParser),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (day, tod) {
-					return _Utils_Tuple2(
-						$author$project$Main$OnDay(day),
-						tod);
-				}),
-			$author$project$Main$dayOfWeekParser,
-			$author$project$Main$timeOfDayParser)
-		]));
-var $author$project$Main$timeDetailParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v0, clock) {
-					var day = _v0.a;
-					var tod = _v0.b;
-					return {
-						clock: clock,
-						day: day,
-						timeOfDay: $elm$core$Maybe$Just(tod)
-					};
-				}),
-			$author$project$Main$timeOfDayWithDayParser,
-			$author$project$Main$maybeClockParser),
-			A3(
-			$author$project$Nld$map2,
-			F2(
-				function (day, clock) {
-					return {clock: clock, day: day, timeOfDay: $elm$core$Maybe$Nothing};
-				}),
-			$author$project$Main$daySpecParser,
-			$author$project$Main$maybeClockParser),
-			A2(
-			$author$project$Nld$map,
-			function (clock) {
-				return {
-					clock: $elm$core$Maybe$Just(clock),
-					day: $author$project$Main$Today,
-					timeOfDay: $elm$core$Maybe$Nothing
-				};
-			},
-			$author$project$Main$clockParser)
-		]));
-var $author$project$Main$timeParser = $author$project$Nld$choice(
-	_List_fromArray(
-		[
-			A2(
-			$author$project$Nld$map,
-			function (_v0) {
-				return $author$project$Main$Now;
-			},
-			$author$project$Nld$word('now')),
-			A2($author$project$Nld$map, $author$project$Main$TimeDetail, $author$project$Main$timeDetailParser)
-		]));
-var $author$project$Main$activityWithTime = A2($author$project$Nld$tuple2, $author$project$Main$activityParser, $author$project$Main$timeParser);
+var $author$project$Main$activityEntryParser = function (currentTime) {
+	return $author$project$Nld$choice(
+		_List_fromArray(
+			[
+				A4(
+				$author$project$Nld$map3,
+				$author$project$Main$ActivityEntry,
+				$author$project$Main$activityParser,
+				A2(
+					$author$project$Nld$map,
+					$elm$core$Maybe$Just,
+					$author$project$Main$whenParser(currentTime)),
+				A2($author$project$Nld$map, $elm$core$Maybe$Just, $author$project$Main$minutesParser)),
+				A4(
+				$author$project$Nld$map3,
+				$author$project$Main$ActivityEntry,
+				$author$project$Main$activityParser,
+				A2(
+					$author$project$Nld$map,
+					$elm$core$Maybe$Just,
+					$author$project$Main$whenParser(currentTime)),
+				$author$project$Nld$succeed($elm$core$Maybe$Nothing)),
+				A4(
+				$author$project$Nld$map3,
+				$author$project$Main$ActivityEntry,
+				$author$project$Main$activityParser,
+				$author$project$Nld$succeed($elm$core$Maybe$Nothing),
+				A2($author$project$Nld$map, $elm$core$Maybe$Just, $author$project$Main$minutesParser)),
+				A4(
+				$author$project$Nld$map3,
+				$author$project$Main$ActivityEntry,
+				$author$project$Main$activityParser,
+				$author$project$Nld$succeed($elm$core$Maybe$Nothing),
+				$author$project$Nld$succeed($elm$core$Maybe$Nothing))
+			]));
+};
+var $elm$core$Basics$composeR = F3(
+	function (f, g, x) {
+		return g(
+			f(x));
+	});
 var $elm$core$Debug$log = _Debug_log;
+var $elm$core$Basics$negate = function (n) {
+	return -n;
+};
 var $elm$core$Tuple$second = function (_v0) {
 	var y = _v0.b;
 	return y;
@@ -7424,237 +7556,77 @@ var $author$project$Nld$runTake = F3(
 					$author$project$Nld$tokenPositionsFromList(tokens),
 					-1)));
 	});
-var $elm$core$String$any = _String_any;
-var $elm$core$String$dropRight = F2(
-	function (n, string) {
-		return (n < 1) ? string : A3($elm$core$String$slice, 0, -n, string);
+var $elm$core$List$sortBy = _List_sortBy;
+var $elm$regex$Regex$Match = F4(
+	function (match, index, number, submatches) {
+		return {index: index, match: match, number: number, submatches: submatches};
 	});
-var $elm$core$String$endsWith = _String_endsWith;
-var $author$project$Main$splitTimeTokens = function (tok) {
-	var prefix = A2($elm$core$String$dropRight, 2, tok);
-	var isClockPrefix = function (str) {
-		return ($elm$core$String$length(str) > 0) && (A2(
-			$elm$core$String$all,
-			function (c) {
-				return $elm$core$Char$isDigit(c) || _Utils_eq(
-					c,
-					_Utils_chr(':'));
-			},
-			str) && A2($elm$core$String$any, $elm$core$Char$isDigit, str));
-	};
-	return (A2($elm$core$String$endsWith, 'am', tok) && isClockPrefix(prefix)) ? _List_fromArray(
-		[prefix, 'am']) : ((A2($elm$core$String$endsWith, 'pm', tok) && isClockPrefix(prefix)) ? _List_fromArray(
-		[prefix, 'pm']) : _List_fromArray(
-		[tok]));
+var $elm$regex$Regex$fromStringWith = _Regex_fromStringWith;
+var $elm$regex$Regex$fromString = function (string) {
+	return A2(
+		$elm$regex$Regex$fromStringWith,
+		{caseInsensitive: false, multiline: false},
+		string);
 };
+var $elm$regex$Regex$never = _Regex_never;
+var $elm$regex$Regex$replace = _Regex_replaceAtMost(_Regex_infinity);
 var $elm$core$String$toLower = _String_toLower;
 var $elm$core$String$words = _String_words;
-var $author$project$Main$parseActivitySmart = function (input) {
-	var tokens = A2(
-		$elm$core$List$concatMap,
-		$author$project$Main$splitTimeTokens,
-		A2(
-			$elm$core$List$filter,
-			function (t) {
-				return t !== '';
-			},
-			$elm$core$String$words(
-				$elm$core$String$toLower(input))));
-	var withAllThree = A3(
-		$author$project$Nld$runTake,
-		5,
+var $author$project$Main$tokenize = function (input) {
+	var timeRegex = A2(
+		$elm$core$Maybe$withDefault,
+		$elm$regex$Regex$never,
+		$elm$regex$Regex$fromString('\\d{1,2}(:\\d{2})?\\s*(am|pm)'));
+	return $elm$core$String$words(
 		A3(
-			$author$project$Nld$map2,
-			F2(
-				function (_v4, t) {
-					var a = _v4.a;
-					var d = _v4.b;
-					return {
-						activity: a,
-						duration: $elm$core$Maybe$Just(d),
-						timeSpec: $elm$core$Maybe$Just(t)
-					};
-				}),
-			$author$project$Main$activityWithDuration,
-			$author$project$Main$timeParser),
-		tokens);
-	var withDurationOnly = A3(
-		$author$project$Nld$runTake,
-		5,
-		A2(
-			$author$project$Nld$map,
-			function (_v3) {
-				var a = _v3.a;
-				var d = _v3.b;
-				return {
-					activity: a,
-					duration: $elm$core$Maybe$Just(d),
-					timeSpec: $elm$core$Maybe$Nothing
-				};
-			},
-			$author$project$Main$activityWithDuration),
-		tokens);
-	var withTimeOnly = A3(
-		$author$project$Nld$runTake,
-		5,
-		A2(
-			$author$project$Nld$map,
-			function (_v2) {
-				var a = _v2.a;
-				var t = _v2.b;
-				return {
-					activity: a,
-					duration: $elm$core$Maybe$Nothing,
-					timeSpec: $elm$core$Maybe$Just(t)
-				};
-			},
-			$author$project$Main$activityWithTime),
-		tokens);
-	var activityOnly = A3(
-		$author$project$Nld$runTake,
-		5,
-		A2(
-			$author$project$Nld$map,
-			function (a) {
-				return {activity: a, duration: $elm$core$Maybe$Nothing, timeSpec: $elm$core$Maybe$Nothing};
-			},
-			$author$project$Main$activityParser),
-		tokens);
-	var results = _Utils_ap(
-		withAllThree,
-		_Utils_ap(
-			withDurationOnly,
-			_Utils_ap(withTimeOnly, activityOnly)));
-	var _v0 = A2($elm$core$Debug$log, 'tokens', tokens);
-	var _v1 = A2(
-		$elm$core$List$map,
-		$elm$core$Debug$log('result'),
-		results);
-	return results;
+			$elm$regex$Regex$replace,
+			timeRegex,
+			A2(
+				$elm$core$Basics$composeR,
+				function ($) {
+					return $.match;
+				},
+				A2(
+					$elm$core$Basics$composeR,
+					$elm$core$String$words,
+					$elm$core$String$join(''))),
+			$elm$core$String$toLower(input)));
 };
-var $author$project$Main$scoreTimeSpec = function (ts) {
-	if (ts.$ === 'Now') {
-		return 2;
-	} else {
-		var detail = ts.a;
-		var timeScore = function () {
-			var _v2 = _Utils_Tuple2(detail.clock, detail.timeOfDay);
-			if (_v2.a.$ === 'Just') {
-				return 3;
-			} else {
-				if (_v2.b.$ === 'Just') {
-					var _v3 = _v2.a;
-					return 1;
-				} else {
-					var _v4 = _v2.a;
-					var _v5 = _v2.b;
-					return 0;
-				}
-			}
-		}();
-		var dayScore = function () {
-			var _v1 = detail.day;
-			switch (_v1.$) {
-				case 'Today':
-					return 0;
-				case 'Yesterday':
-					return 2;
-				default:
-					return 2;
-			}
-		}();
-		return dayScore + timeScore;
-	}
-};
-var $elm$core$List$sortBy = _List_sortBy;
-var $author$project$Main$parseBestActivity = function (input) {
-	var _v0 = $author$project$Main$parseActivitySmart(input);
-	if (!_v0.b) {
-		return $elm$core$Maybe$Nothing;
-	} else {
-		var results = _v0;
-		var scored = A2(
+var $author$project$Main$parseActivity = F2(
+	function (currentTime, input) {
+		var tokens = $author$project$Main$tokenize(input);
+		var _v0 = A2($elm$core$Debug$log, 'tokens', tokens);
+		return A2(
 			$elm$core$List$map,
-			function (r) {
-				var timeScore = function () {
-					var _v4 = r.timeSpec;
-					if (_v4.$ === 'Nothing') {
-						return 0;
-					} else {
-						var ts = _v4.a;
-						return $author$project$Main$scoreTimeSpec(ts);
-					}
-				}();
-				var durationScore = (!_Utils_eq(r.duration, $elm$core$Maybe$Nothing)) ? 10 : 0;
-				return _Utils_Tuple2(durationScore + timeScore, r);
-			},
-			results);
-		var sorted = A2(
-			$elm$core$List$sortBy,
-			function (_v3) {
-				var s = _v3.a;
-				return -s;
-			},
-			scored);
-		if (sorted.b) {
-			var _v2 = sorted.a;
-			var best = _v2.b;
-			return $elm$core$Maybe$Just(best);
-		} else {
-			return $elm$core$Maybe$Nothing;
-		}
-	}
-};
-var $author$project$Main$defaultClockForTimeOfDay = function (tod) {
-	switch (tod.$) {
-		case 'Morning':
-			return {hour: 9, meridiem: $author$project$Main$AM, minute: 0};
-		case 'Afternoon':
-			return {hour: 3, meridiem: $author$project$Main$PM, minute: 0};
-		case 'Evening':
-			return {hour: 6, meridiem: $author$project$Main$PM, minute: 0};
-		case 'Night':
-			return {hour: 9, meridiem: $author$project$Main$PM, minute: 0};
-		default:
-			return {hour: 12, meridiem: $author$project$Main$PM, minute: 0};
-	}
-};
-var $author$project$Main$meridiemForTimeOfDay = function (tod) {
-	switch (tod.$) {
-		case 'Morning':
-			return $author$project$Main$AM;
-		case 'Afternoon':
-			return $author$project$Main$PM;
-		case 'Evening':
-			return $author$project$Main$PM;
-		case 'Night':
-			return $author$project$Main$PM;
-		default:
-			return $author$project$Main$PM;
-	}
-};
-var $author$project$Main$clockFromDetail = function (detail) {
-	var _v0 = detail.clock;
-	if (_v0.$ === 'Just') {
-		var clock = _v0.a;
-		var meridiem = function () {
-			var _v1 = clock.meridiem;
-			if (_v1.$ === 'Just') {
-				var m = _v1.a;
-				return m;
-			} else {
-				return A2(
-					$elm$core$Maybe$withDefault,
-					$author$project$Main$AM,
-					A2($elm$core$Maybe$map, $author$project$Main$meridiemForTimeOfDay, detail.timeOfDay));
-			}
-		}();
-		return {hour: clock.hour, meridiem: meridiem, minute: clock.minute};
-	} else {
-		return $author$project$Main$defaultClockForTimeOfDay(
-			A2($elm$core$Maybe$withDefault, $author$project$Main$Noon, detail.timeOfDay));
-	}
-};
+			$elm$core$Debug$log('entry'),
+			A2(
+				$elm$core$Debug$log,
+				'results',
+				A2(
+					$elm$core$List$sortBy,
+					function (entry) {
+						return A3(
+							$elm$core$Basics$composeR,
+							$elm$core$Maybe$map(
+								function (_v1) {
+									return 0;
+								}),
+							$elm$core$Maybe$withDefault(2),
+							entry.minutes) + A3(
+							$elm$core$Basics$composeR,
+							$elm$core$Maybe$map(
+								function (_v2) {
+									return 0;
+								}),
+							$elm$core$Maybe$withDefault(1),
+							entry.when);
+					},
+					A3(
+						$author$project$Nld$runTake,
+						5,
+						$author$project$Main$activityEntryParser(currentTime),
+						tokens))));
+	});
 var $justinmimbs$date$Date$Days = {$: 'Days'};
 var $justinmimbs$date$Date$Months = {$: 'Months'};
 var $justinmimbs$date$Date$daysBeforeMonth = F2(
@@ -7874,6 +7846,31 @@ var $justinmimbs$date$Date$add = F3(
 				return $justinmimbs$date$Date$RD(rd + n);
 		}
 	});
+var $author$project$Main$subtractMinutes = F2(
+	function (minutes, time) {
+		var hour24 = function () {
+			var _v1 = time.meridiem;
+			if (_v1.$ === 'Am') {
+				return (time.hour === 12) ? 0 : time.hour;
+			} else {
+				return (time.hour === 12) ? 12 : (time.hour + 12);
+			}
+		}();
+		var newTotal = A2($elm$core$Basics$modBy, 24 * 60, ((hour24 * 60) + time.minute) - minutes);
+		var newHour24 = (newTotal / 60) | 0;
+		var newHour = function () {
+			var _v0 = A2($elm$core$Basics$modBy, 12, newHour24);
+			if (!_v0) {
+				return 12;
+			} else {
+				var h = _v0;
+				return h;
+			}
+		}();
+		var newMeridiem = (newHour24 < 12) ? $author$project$Main$Am : $author$project$Main$Pm;
+		var newMinute = A2($elm$core$Basics$modBy, 60, newTotal);
+		return {hour: newHour, meridiem: newMeridiem, minute: newMinute};
+	});
 var $justinmimbs$date$Date$weekdayNumber = function (_v0) {
 	var rd = _v0.a;
 	var _v1 = A2($elm$core$Basics$modBy, 7, rd);
@@ -7902,44 +7899,64 @@ var $justinmimbs$date$Date$weekdayToNumber = function (wd) {
 			return 7;
 	}
 };
-var $author$project$Main$resolveDay = F2(
-	function (baseDate, daySpec) {
-		switch (daySpec.$) {
-			case 'Today':
-				return baseDate;
-			case 'Yesterday':
-				return A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -1, baseDate);
-			default:
-				var target = daySpec.a;
-				var targetIndex = $justinmimbs$date$Date$weekdayToNumber(target);
-				var baseIndex = $justinmimbs$date$Date$weekdayNumber(baseDate);
-				var delta = A2($elm$core$Basics$modBy, 7, baseIndex - targetIndex);
-				return A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -delta, baseDate);
-		}
-	});
 var $author$project$Main$resolveDateTime = F2(
-	function (base, maybeSpec) {
-		var defaultDetail = {
-			clock: $elm$core$Maybe$Nothing,
-			day: $author$project$Main$Today,
-			timeOfDay: $elm$core$Maybe$Just($author$project$Main$Noon)
-		};
-		if (maybeSpec.$ === 'Nothing') {
-			return {
-				date: base.date,
-				time: $author$project$Main$clockFromDetail(defaultDetail)
-			};
-		} else {
-			if (maybeSpec.a.$ === 'Now') {
-				var _v1 = maybeSpec.a;
-				return {date: base.date, time: base.time};
-			} else {
-				var detail = maybeSpec.a.a;
+	function (current, when) {
+		var defaultTime = {hour: 12, meridiem: $author$project$Main$Pm, minute: 0};
+		switch (when.$) {
+			case 'Today':
+				if (when.a.$ === 'Just') {
+					var time = when.a.a;
+					return {date: current.date, time: time};
+				} else {
+					var _v1 = when.a;
+					return current;
+				}
+			case 'DaysAgo':
+				if (when.b.$ === 'Just') {
+					var days = when.a;
+					var time = when.b.a;
+					return {
+						date: A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -days, current.date),
+						time: time
+					};
+				} else {
+					var days = when.a;
+					var _v2 = when.b;
+					return {
+						date: A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -days, current.date),
+						time: defaultTime
+					};
+				}
+			case 'MinutesAgo':
+				var minutes = when.a;
 				return {
-					date: A2($author$project$Main$resolveDay, base.date, detail.day),
-					time: $author$project$Main$clockFromDetail(detail)
+					date: current.date,
+					time: A2($author$project$Main$subtractMinutes, minutes, current.time)
 				};
-			}
+			default:
+				if (when.b.$ === 'Just') {
+					var weekday = when.a;
+					var time = when.b.a;
+					var delta = A2(
+						$elm$core$Basics$modBy,
+						7,
+						$justinmimbs$date$Date$weekdayNumber(current.date) - $justinmimbs$date$Date$weekdayToNumber(weekday));
+					return {
+						date: A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -delta, current.date),
+						time: time
+					};
+				} else {
+					var weekday = when.a;
+					var _v3 = when.b;
+					var delta = A2(
+						$elm$core$Basics$modBy,
+						7,
+						$justinmimbs$date$Date$weekdayNumber(current.date) - $justinmimbs$date$Date$weekdayToNumber(weekday));
+					return {
+						date: A3($justinmimbs$date$Date$add, $justinmimbs$date$Date$Days, -delta, current.date),
+						time: defaultTime
+					};
+				}
 		}
 	});
 var $author$project$Main$viewActivity = function (activity) {
@@ -7954,11 +7971,6 @@ var $author$project$Main$viewActivity = function (activity) {
 			return $elm$html$Html$text('🧘 Yoga');
 	}
 };
-var $elm$core$Basics$composeR = F3(
-	function (f, g, x) {
-		return g(
-			f(x));
-	});
 var $justinmimbs$date$Date$day = A2(
 	$elm$core$Basics$composeR,
 	$justinmimbs$date$Date$toCalendarDate,
@@ -8969,21 +8981,19 @@ var $justinmimbs$date$Date$language_en = {
 var $justinmimbs$date$Date$format = function (pattern) {
 	return A2($justinmimbs$date$Date$formatWithLanguage, $justinmimbs$date$Date$language_en, pattern);
 };
-var $author$project$Main$formatClock = function (clock) {
-	var minuteString = A3(
+var $author$project$Main$formatTime = function (time) {
+	return $elm$core$String$fromInt(time.hour) + (':' + (A3(
 		$elm$core$String$padLeft,
 		2,
 		_Utils_chr('0'),
-		$elm$core$String$fromInt(clock.minute));
-	var hourString = function () {
-		var _v0 = clock.meridiem;
-		if (_v0.$ === 'AM') {
-			return $elm$core$String$fromInt(clock.hour);
+		$elm$core$String$fromInt(time.minute)) + (' ' + function () {
+		var _v0 = time.meridiem;
+		if (_v0.$ === 'Am') {
+			return 'AM';
 		} else {
-			return $elm$core$String$fromInt(clock.hour + 12);
+			return 'PM';
 		}
-	}();
-	return hourString + (':' + minuteString);
+	}())));
 };
 var $elm$json$Json$Encode$object = function (pairs) {
 	return _Json_wrap(
@@ -9025,15 +9035,15 @@ var $author$project$Main$viewDateTime = function (dateTime) {
 							_Utils_Tuple2(
 							'time',
 							$elm$json$Json$Encode$string(
-								$author$project$Main$formatClock(dateTime.time)))
+								$author$project$Main$formatTime(dateTime.time)))
 						])))
 			]),
 		_List_Nil);
 };
 var $elm$json$Json$Encode$int = _Json_wrap;
-var $author$project$Main$viewDuration = function (duration) {
-	var minutes = A2($elm$core$Basics$modBy, 60, duration);
-	var hours = (duration / 60) | 0;
+var $author$project$Main$viewMinutes = function (minutes) {
+	var minutes_ = A2($elm$core$Basics$modBy, 60, minutes);
+	var hours = (minutes / 60) | 0;
 	return A3(
 		$elm$html$Html$node,
 		'duration-format',
@@ -9050,27 +9060,31 @@ var $author$project$Main$viewDuration = function (duration) {
 							$elm$json$Json$Encode$int(hours)),
 							_Utils_Tuple2(
 							'minutes',
-							$elm$json$Json$Encode$int(minutes))
+							$elm$json$Json$Encode$int(minutes_))
 						])))
 			]),
 		_List_Nil);
 };
 var $author$project$Main$viewBestMatch = F2(
-	function (base, input) {
-		var _v0 = $author$project$Main$parseBestActivity(input);
-		if (_v0.$ === 'Nothing') {
+	function (currentDateTime, input) {
+		var _v0 = A2($author$project$Main$parseActivity, currentDateTime.time, input);
+		if (!_v0.b) {
 			return $elm$html$Html$text('No match yet');
 		} else {
 			var parsed = _v0.a;
-			var resolved = A2($author$project$Main$resolveDateTime, base, parsed.timeSpec);
-			var duration = A2($elm$core$Maybe$withDefault, 30, parsed.duration);
+			var when = A2(
+				$elm$core$Maybe$withDefault,
+				$author$project$Main$Today($elm$core$Maybe$Nothing),
+				parsed.when);
+			var resolved = A2($author$project$Main$resolveDateTime, currentDateTime, when);
 			return A2(
 				$elm$html$Html$div,
 				_List_Nil,
 				_List_fromArray(
 					[
 						$author$project$Main$viewActivity(parsed.activity),
-						$author$project$Main$viewDuration(duration),
+						$author$project$Main$viewMinutes(
+						A2($elm$core$Maybe$withDefault, 30, parsed.minutes)),
 						$author$project$Main$viewDateTime(resolved)
 					]));
 		}
@@ -9166,7 +9180,7 @@ var $author$project$Main$view = function (model) {
 									]),
 								_List_fromArray(
 									[
-										A2($author$project$Main$viewBestMatch, model.baseDateTime, model.input)
+										A2($author$project$Main$viewBestMatch, model.now, model.input)
 									]))
 							]))
 					])),
@@ -9205,7 +9219,7 @@ var $author$project$Main$view = function (model) {
 											_List_Nil,
 											_List_fromArray(
 												[
-													A2($author$project$Main$viewBestMatch, model.baseDateTime, example)
+													A2($author$project$Main$viewBestMatch, model.now, example)
 												]))
 										]));
 							},
