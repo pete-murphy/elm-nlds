@@ -1,8 +1,8 @@
 module Nld exposing
     ( Nld
     , run, runList, runTake
-    , word, words, token, nat, tokenMatching, minimalToken
-    , indexedWord, indexedWords, indexedToken, indexedNat, indexedTokenMatching
+    , word, words, token, nat, int, tokenMatching, tokenFilterMap, minimalToken
+    , indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedTokenMatching, indexedTokenFilterMap
     , succeed, map, map2, map3, andThen, andMap
     , tuple2, tuple3
     , choice, repeat
@@ -29,14 +29,14 @@ alternate phrasings, making it ideal for parsing natural language input.
 
 # Token Matchers
 
-@docs word, words, token, nat, tokenMatching, minimalToken
+@docs word, words, token, nat, int, tokenMatching, tokenFilterMap, minimalToken
 
 
 # Indexed Token Matchers
 
 These return both the matched value and its position in the input.
 
-@docs indexedWord, indexedWords, indexedToken, indexedNat, indexedTokenMatching
+@docs indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedTokenMatching, indexedTokenFilterMap
 
 
 # Transforming and Combining
@@ -266,6 +266,17 @@ nat =
     map Tuple.first indexedNat
 
 
+{-| Match an integer (positive or negative).
+
+    runList (tuple2 (word "offset") int) [ "offset", "-5", "pixels" ]
+    --> [ ( "offset", -5 ) ]
+
+-}
+int : Nld Int
+int =
+    map Tuple.first indexedInt
+
+
 {-| Match tokens satisfying a predicate.
 
     runList (tokenMatching (String.endsWith ".txt")) [ "open", "report.txt" ]
@@ -275,6 +286,18 @@ nat =
 tokenMatching : (String -> Bool) -> Nld String
 tokenMatching pred =
     map Tuple.first (indexedTokenMatching pred)
+
+
+{-| Match tokens using a filter-map function. If the function returns `Just`,
+the token is matched and the value is returned.
+
+    runList (tokenFilterMap String.toInt) [ "buy", "3", "apples" ]
+    --> [ 3 ]
+
+-}
+tokenFilterMap : (String -> Maybe a) -> Nld a
+tokenFilterMap f =
+    map Tuple.first (indexedTokenFilterMap f)
 
 
 {-| Match any of several weighted tokens. Lower weights are preferred.
@@ -451,6 +474,50 @@ indexedToken =
 -}
 indexedNat : Nld ( Int, Int )
 indexedNat =
+    indexedTokenFilterMap
+        (\t ->
+            String.toInt t
+                |> Maybe.andThen
+                    (\n ->
+                        if n >= 0 then
+                            Just n
+
+                        else
+                            Nothing
+                    )
+        )
+
+
+{-| Match an integer (positive or negative) and return it with its position.
+-}
+indexedInt : Nld ( Int, Int )
+indexedInt =
+    indexedTokenFilterMap String.toInt
+
+
+{-| Match tokens satisfying a predicate and return with position.
+-}
+indexedTokenMatching : (String -> Bool) -> Nld ( String, Int )
+indexedTokenMatching pred =
+    indexedTokenFilterMap
+        (\t ->
+            if pred t then
+                Just t
+
+            else
+                Nothing
+        )
+
+
+{-| Match tokens using a filter-map function, returning the mapped value with its position.
+If the function returns `Just a` for a token, that token is matched and `( a, position )` is returned.
+
+    runList (indexedTokenFilterMap String.toInt) [ "buy", "3", "apples" ]
+    --> [ ( 3, 1 ) ]
+
+-}
+indexedTokenFilterMap : (String -> Maybe a) -> Nld ( a, Int )
+indexedTokenFilterMap f =
     let
         k tp lastPos =
             let
@@ -458,20 +525,12 @@ indexedNat =
                     Dict.toList tp.byPosition
                         |> List.filterMap
                             (\( p, t ) ->
-                                String.toInt t
-                                    |> Maybe.andThen
-                                        (\n ->
-                                            if n >= 0 then
-                                                Just ( p, t, n )
-
-                                            else
-                                                Nothing
-                                        )
+                                f t |> Maybe.map (\a -> ( p, t, a ))
                             )
 
                 weightedPositions =
                     allPositions
-                        |> List.map (\( p, t, n ) -> ( gapCost lastPos p, ( t, p, n ) ))
+                        |> List.map (\( p, t, a ) -> ( gapCost lastPos p, ( t, p, a ) ))
             in
             if List.isEmpty weightedPositions then
                 Peach.fail
@@ -479,36 +538,8 @@ indexedNat =
             else
                 Peach.peach weightedPositions
                     |> Peach.map
-                        (\( t, p, n ) ->
-                            Done ( n, p ) (remove t p tp) p
-                        )
-    in
-    More Set.empty k
-
-
-{-| Match tokens satisfying a predicate and return with position.
--}
-indexedTokenMatching : (String -> Bool) -> Nld ( String, Int )
-indexedTokenMatching pred =
-    let
-        k tp lastPos =
-            let
-                allPositions =
-                    Dict.toList tp.byPosition
-                        |> List.filter (\( _, t ) -> pred t)
-
-                weightedPositions =
-                    allPositions
-                        |> List.map (\( p, t ) -> ( gapCost lastPos p, ( t, p ) ))
-            in
-            if List.isEmpty weightedPositions then
-                Peach.fail
-
-            else
-                Peach.peach weightedPositions
-                    |> Peach.map
-                        (\( t, p ) ->
-                            Done ( t, p ) (remove t p tp) p
+                        (\( t, p, a ) ->
+                            Done ( a, p ) (remove t p tp) p
                         )
     in
     More Set.empty k
