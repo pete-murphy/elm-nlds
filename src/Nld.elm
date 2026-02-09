@@ -3,7 +3,7 @@ module Nld exposing
     , run, runList, runTake
     , word, words, token, nat, int, tokenMatching, tokenFilterMap, minimalToken
     , indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedTokenMatching, indexedTokenFilterMap
-    , succeed, map, map2, map3, andThen, andMap
+    , succeed, map, map2, map3, map4, map5, map6, map7, map8, andThen, andMap
     , tuple2, tuple3
     , choice, repeat
     , autocomplete, topK
@@ -41,7 +41,7 @@ These return both the matched value and its position in the input.
 
 # Transforming and Combining
 
-@docs succeed, map, map2, map3, andThen, andMap
+@docs succeed, map, map2, map3, map4, map5, map6, map7, map8, andThen, andMap
 @docs tuple2, tuple3
 
 
@@ -600,6 +600,41 @@ map2 f nldA nldB =
 map3 : (a -> b -> c -> d) -> Nld a -> Nld b -> Nld c -> Nld d
 map3 f nldA nldB nldC =
     andThen (\a -> map2 (\b c -> f a b c) nldB nldC) nldA
+
+
+{-| Combine four parsers.
+-}
+map4 : (a -> b -> c -> d -> e) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e
+map4 f nldA nldB nldC nldD =
+    andThen (\a -> map3 (\b c d -> f a b c d) nldB nldC nldD) nldA
+
+
+{-| Combine five parsers.
+-}
+map5 : (a -> b -> c -> d -> e -> f) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f
+map5 fn nldA nldB nldC nldD nldE =
+    andThen (\a -> map4 (\b c d e -> fn a b c d e) nldB nldC nldD nldE) nldA
+
+
+{-| Combine six parsers.
+-}
+map6 : (a -> b -> c -> d -> e -> f -> g) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g
+map6 fn nldA nldB nldC nldD nldE nldF =
+    andThen (\a -> map5 (\b c d e f -> fn a b c d e f) nldB nldC nldD nldE nldF) nldA
+
+
+{-| Combine seven parsers.
+-}
+map7 : (a -> b -> c -> d -> e -> f -> g -> h) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h
+map7 fn nldA nldB nldC nldD nldE nldF nldG =
+    andThen (\a -> map6 (\b c d e f g -> fn a b c d e f g) nldB nldC nldD nldE nldF nldG) nldA
+
+
+{-| Combine eight parsers.
+-}
+map8 : (a -> b -> c -> d -> e -> f -> g -> h -> i) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h -> Nld i
+map8 fn nldA nldB nldC nldD nldE nldF nldG nldH =
+    andThen (\a -> map7 (\b c d e f g h -> fn a b c d e f g h) nldB nldC nldD nldE nldF nldG nldH) nldA
 
 
 {-| Combine two parsers into a tuple.
