@@ -1,8 +1,5 @@
 module Main exposing (main)
 
-{-| NLDs Activity Parser Example - Ellie-friendly
--}
-
 import Browser
 import Date exposing (Date)
 import Html exposing (Html)
@@ -20,7 +17,7 @@ import Time exposing (Month(..), Weekday(..))
 
 type alias ActivityEntry =
     { activity : Activity
-    , when : When
+    , when : Maybe When
     , minutes : Maybe Int
     }
 
@@ -140,7 +137,6 @@ whenParser currentTime =
         , timeParser currentTime
             |> Nld.map (\parsedTime -> Today (Just parsedTime))
         , whenParserHelp Nothing
-        , Nld.succeed (Today Nothing)
         ]
 
 
@@ -180,52 +176,13 @@ weekdayParser =
         ]
 
 
-clockTimeFromString : Time -> String -> Maybe Time
-clockTimeFromString currentTime tok =
-    case String.split ":" tok of
-        [ hourStr, minuteStr ] ->
-            case ( String.toInt hourStr, String.toInt (String.filter Char.isDigit minuteStr) ) of
-                ( Just hour, Just minute ) ->
-                    let
-                        meridiem =
-                            if String.endsWith "pm" tok || String.endsWith "p" tok then
-                                Pm
-
-                            else if String.endsWith "am" tok || String.endsWith "a" tok then
-                                Am
-
-                            else
-                                case ( modBy 12 hour < modBy 12 currentTime.hour, currentTime.meridiem ) of
-                                    ( True, m ) ->
-                                        m
-
-                                    ( False, Am ) ->
-                                        Pm
-
-                                    ( False, Pm ) ->
-                                        Am
-                    in
-                    if hour >= 1 && hour <= 12 && minute >= 0 && minute < 60 then
-                        Just { hour = hour, minute = minute, meridiem = meridiem }
-
-                    else if hour <= 24 && minute >= 0 && minute < 60 then
-                        Just { hour = hour - 12, minute = minute, meridiem = Pm }
-
-                    else
-                        Nothing
-
-                _ ->
-                    Nothing
-
-        _ ->
-            Nothing
-
-
 activityEntryParser : Time -> Nld ActivityEntry
 activityEntryParser currentTime =
     Nld.choice
-        [ Nld.map3 ActivityEntry activityParser (whenParser currentTime) (Nld.map Just minutesParser)
-        , Nld.map3 ActivityEntry activityParser (whenParser currentTime) (Nld.succeed Nothing)
+        [ Nld.map3 ActivityEntry activityParser (Nld.map Just (whenParser currentTime)) (Nld.map Just minutesParser)
+        , Nld.map3 ActivityEntry activityParser (Nld.map Just (whenParser currentTime)) (Nld.succeed Nothing)
+        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) (Nld.map Just minutesParser)
+        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) (Nld.succeed Nothing)
         ]
 
 
@@ -233,8 +190,7 @@ tokenize : String -> List String
 tokenize input =
     let
         timeRegex =
-            Regex.fromString "\\d{1,2}(:\\d{2})?\\s*(am|pm)?"
-                |> Debug.log "timeRegex"
+            Regex.fromString "\\d{1,2}(:\\d{2})?\\s*(am|pm)"
                 |> Maybe.withDefault Regex.never
     in
     input
@@ -253,6 +209,14 @@ parseActivity currentTime input =
             Debug.log "tokens" tokens
     in
     Nld.runTake 5 (activityEntryParser currentTime) tokens
+        -- Prefer matches with "minutes" / "when" specified
+        |> List.sortBy
+            (\entry ->
+                (entry.minutes |> Maybe.map (\_ -> 0) >> Maybe.withDefault 2)
+                    + (entry.when |> Maybe.map (\_ -> 0) >> Maybe.withDefault 1)
+            )
+        |> Debug.log "results"
+        |> List.map (Debug.log "entry")
 
 
 
@@ -458,14 +422,21 @@ viewBestMatch currentDateTime input =
 
         parsed :: _ ->
             let
+                when =
+                    parsed.when |> Maybe.withDefault (Today Nothing)
+
                 resolved =
-                    resolveDateTime currentDateTime parsed.when
+                    resolveDateTime currentDateTime when
             in
             Html.div []
                 [ viewActivity parsed.activity
                 , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
                 , viewDateTime resolved
                 ]
+
+
+
+-- UTILS
 
 
 resolveDateTime :
@@ -567,3 +538,44 @@ subtractMinutes minutes time =
                     h
     in
     { hour = newHour, minute = newMinute, meridiem = newMeridiem }
+
+
+clockTimeFromString : Time -> String -> Maybe Time
+clockTimeFromString currentTime tok =
+    case String.split ":" tok of
+        [ hourStr, minuteStr ] ->
+            case ( String.toInt hourStr, String.toInt (String.filter Char.isDigit minuteStr) ) of
+                ( Just hour, Just minute ) ->
+                    let
+                        meridiem =
+                            if String.endsWith "pm" tok || String.endsWith "p" tok then
+                                Pm
+
+                            else if String.endsWith "am" tok || String.endsWith "a" tok then
+                                Am
+
+                            else
+                                case ( modBy 12 hour < modBy 12 currentTime.hour, currentTime.meridiem ) of
+                                    ( True, m ) ->
+                                        m
+
+                                    ( False, Am ) ->
+                                        Pm
+
+                                    ( False, Pm ) ->
+                                        Am
+                    in
+                    if hour >= 1 && hour <= 12 && minute >= 0 && minute < 60 then
+                        Just { hour = hour, minute = minute, meridiem = meridiem }
+
+                    else if hour <= 24 && minute >= 0 && minute < 60 then
+                        Just { hour = hour - 12, minute = minute, meridiem = Pm }
+
+                    else
+                        Nothing
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
