@@ -1,20 +1,28 @@
 module Main exposing (main)
 
-{-| NLDS Activity Parser Example - Ellie-friendly
+{-| NLDs Activity Parser Example - Ellie-friendly
 -}
 
 import Browser
-import Date
+import Date exposing (Date)
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Html.Events as Events
 import Json.Encode
 import Nld exposing (Nld)
+import Regex
 import Time exposing (Month(..), Weekday(..))
 
 
 
--- DOMAIN MODEL
+-- TYPES
+
+
+type alias ActivityEntry =
+    { activity : Activity
+    , when : When
+    , minutes : Maybe Int
+    }
 
 
 type Activity
@@ -24,57 +32,33 @@ type Activity
     | Yoga
 
 
-type alias Duration =
-    Int
+type When
+    = MinutesAgo Int
+    | Today (Maybe Time)
+    | DaysAgo Int (Maybe Time)
+    | OnDay Weekday (Maybe Time)
 
 
-type TimeOfDay
-    = Morning
-    | Afternoon
-    | Evening
-    | Night
-    | Noon
-
-
-type DaySpec
-    = Today
-    | Yesterday
-    | OnDay Weekday
-
-
-type TimeSpec
-    = Now
-    | TimeDetail TimeDetailData
-
-
-type alias TimeDetailData =
-    { day : DaySpec
-    , timeOfDay : Maybe TimeOfDay
-    , clock : Maybe Clock
+type alias Time =
+    { hour : Int
+    , minute : Int
+    , meridiem : Meridiem
     }
 
 
 type Meridiem
-    = AM
-    | PM
+    = Am
+    | Pm
 
 
-type alias Clock =
-    { hour : Int
-    , minute : Int
-    , meridiem : Maybe Meridiem
-    }
-
-
-type alias ParsedActivity =
-    { activity : Activity
-    , duration : Maybe Duration
-    , timeSpec : Maybe TimeSpec
+type alias DateTime =
+    { date : Date
+    , time : Time
     }
 
 
 
--- ACTIVITY SYNONYMS
+-- SYNONYMS
 
 
 activitySynonyms : List ( Activity, List String )
@@ -87,33 +71,104 @@ activitySynonyms =
 
 
 
--- NLDS PARSERS
+-- PARSERS
 
 
 activityParser : Nld Activity
 activityParser =
     Nld.choice
         (List.map
-            (\( activity, syns ) ->
-                Nld.map (\_ -> activity) (Nld.words syns)
-            )
+            (\( activity, syns ) -> Nld.map (\_ -> activity) (Nld.words syns))
             activitySynonyms
         )
 
 
-timeOfDayParser : Nld TimeOfDay
-timeOfDayParser =
+minutesParser : Nld Int
+minutesParser =
+    let
+        anHour =
+            Nld.tuple2 (Nld.words [ "an", "a", "one", "1" ]) (Nld.word "hour")
+
+        hours =
+            Nld.words [ "hours", "hour", "hrs", "hr" ]
+
+        minutes =
+            Nld.words [ "minutes", "minute", "mins", "min" ]
+
+        and =
+            Nld.words [ "and", "&" ]
+
+        numberWords =
+            [ ( 1, "one" )
+            , ( 2, "two" )
+            , ( 3, "three" )
+            , ( 4, "four" )
+            , ( 5, "five" )
+            , ( 10, "ten" )
+            ]
+                |> List.map (\( n, word ) -> Nld.map (\_ -> n) (Nld.word word))
+                |> Nld.choice
+    in
     Nld.choice
-        [ Nld.map (\_ -> Morning) (Nld.word "morning")
-        , Nld.map (\_ -> Afternoon) (Nld.word "afternoon")
-        , Nld.map (\_ -> Evening) (Nld.word "evening")
-        , Nld.map (\_ -> Night) (Nld.word "night")
-        , Nld.map (\_ -> Noon) (Nld.word "noon")
+        [ Nld.map3 (\_ _ _ -> 30) (Nld.words [ "a", "an" ]) (Nld.word "half") (Nld.word "hour")
+        , Nld.map4 (\_ _ mins _ -> 60 + mins) anHour and Nld.nat minutes
+        , Nld.map2 (\mins _ -> mins) Nld.nat minutes
+        , Nld.map2 (\hrs _ -> hrs * 60) Nld.nat hours
+        , Nld.map4 (\_ _ _ _ -> 90) anHour and (Nld.word "a") (Nld.word "half")
+        , Nld.map (\_ -> 60) anHour
+        , Nld.map2 (\n _ -> n * 60) numberWords hours
+        , Nld.map2 (\n _ -> n) numberWords minutes
         ]
 
 
-dayOfWeekParser : Nld Weekday
-dayOfWeekParser =
+whenParser : Time -> Nld When
+whenParser currentTime =
+    let
+        whenParserHelp parsedTime =
+            Nld.choice
+                [ Nld.map (\_ -> Today parsedTime) (Nld.word "today")
+                , Nld.map3 (\days _ _ -> DaysAgo days parsedTime) Nld.nat (Nld.words [ "days", "day" ]) (Nld.word "ago")
+                , Nld.map (\_ -> DaysAgo 1 parsedTime) (Nld.word "yesterday")
+                , Nld.map2 (\_ _ -> DaysAgo 1 parsedTime) (Nld.word "last") (Nld.word "night")
+                , Nld.map2 (\mins _ -> MinutesAgo mins) minutesParser (Nld.word "ago")
+                , Nld.map (\weekday -> OnDay weekday parsedTime) weekdayParser
+                ]
+    in
+    Nld.choice
+        [ timeParser currentTime
+            |> Nld.andThen (\parsedTime -> whenParserHelp (Just parsedTime))
+        , timeParser currentTime
+            |> Nld.map (\parsedTime -> Today (Just parsedTime))
+        , whenParserHelp Nothing
+        , Nld.succeed (Today Nothing)
+        ]
+
+
+timeParser : Time -> Nld Time
+timeParser currentTime =
+    let
+        clockTimeParser =
+            Nld.tokenFilterMap (clockTimeFromString currentTime)
+
+        timeOfDayParser =
+            Nld.choice
+                [ Nld.map (\_ -> ( 9, Am )) (Nld.word "morning")
+                , Nld.map (\_ -> ( 12, Pm )) (Nld.word "noon")
+                , Nld.map (\_ -> ( 3, Pm )) (Nld.word "afternoon")
+                , Nld.map (\_ -> ( 6, Pm )) (Nld.word "evening")
+                , Nld.map (\_ -> ( 9, Pm )) (Nld.word "night")
+                ]
+                |> Nld.map (\( hour, meridiem ) -> { hour = hour, minute = 0, meridiem = meridiem })
+    in
+    Nld.choice
+        [ Nld.map2 (\clk tod -> { clk | meridiem = tod.meridiem }) clockTimeParser timeOfDayParser
+        , clockTimeParser
+        , timeOfDayParser
+        ]
+
+
+weekdayParser : Nld Weekday
+weekdayParser =
     Nld.choice
         [ Nld.map (\_ -> Mon) (Nld.words [ "monday", "mon" ])
         , Nld.map (\_ -> Tue) (Nld.words [ "tuesday", "tue", "tues" ])
@@ -125,139 +180,36 @@ dayOfWeekParser =
         ]
 
 
-timeParser : Nld TimeSpec
-timeParser =
-    Nld.choice
-        [ Nld.map (\_ -> Now) (Nld.word "now")
-        , Nld.map TimeDetail timeDetailParser
-        ]
-
-
-timeDetailParser : Nld TimeDetailData
-timeDetailParser =
-    Nld.choice
-        [ Nld.map2
-            (\( day, tod ) clock ->
-                { day = day
-                , timeOfDay = Just tod
-                , clock = clock
-                }
-            )
-            timeOfDayWithDayParser
-            maybeClockParser
-        , Nld.map2
-            (\day clock ->
-                { day = day
-                , timeOfDay = Nothing
-                , clock = clock
-                }
-            )
-            daySpecParser
-            maybeClockParser
-        , Nld.map
-            (\clock ->
-                { day = Today
-                , timeOfDay = Nothing
-                , clock = Just clock
-                }
-            )
-            clockParser
-        ]
-
-
-daySpecParser : Nld DaySpec
-daySpecParser =
-    Nld.choice
-        [ Nld.map (\_ -> Yesterday) (Nld.word "yesterday")
-        , Nld.map OnDay dayOfWeekParser
-        ]
-
-
-timeOfDayWithDayParser : Nld ( DaySpec, TimeOfDay )
-timeOfDayWithDayParser =
-    Nld.choice
-        [ Nld.map2 (\_ _ -> ( Yesterday, Night ))
-            (Nld.word "last")
-            (Nld.word "night")
-        , Nld.map (\_ -> ( Today, Night )) (Nld.word "tonight")
-        , Nld.map2 (\_ tod -> ( Yesterday, tod ))
-            (Nld.word "yesterday")
-            timeOfDayParser
-        , Nld.map2 (\_ tod -> ( Today, tod ))
-            (Nld.word "this")
-            timeOfDayParser
-        , Nld.map (\tod -> ( Today, tod ))
-            timeOfDayParser
-        , Nld.map2
-            (\day tod -> ( OnDay day, tod ))
-            dayOfWeekParser
-            timeOfDayParser
-        ]
-
-
-maybeClockParser : Nld (Maybe Clock)
-maybeClockParser =
-    Nld.choice
-        [ Nld.map Just clockParser
-        , Nld.succeed Nothing
-        ]
-
-
-clockParser : Nld Clock
-clockParser =
-    Nld.choice
-        [ Nld.map2
-            (\( h, m ) meridiem ->
-                { hour = h, minute = m, meridiem = Just meridiem }
-            )
-            clockTokenParser
-            meridiemParser
-        , Nld.map2
-            (\h meridiem ->
-                { hour = h, minute = 0, meridiem = Just meridiem }
-            )
-            Nld.nat
-            meridiemParser
-        , Nld.map
-            (\( h, m ) ->
-                { hour = h, minute = m, meridiem = Nothing }
-            )
-            clockTokenParser
-        ]
-
-
-clockTokenParser : Nld ( Int, Int )
-clockTokenParser =
-    Nld.tokenMatching isClockToken
-        |> Nld.map (\tok -> parseClockToken tok |> Maybe.withDefault ( 0, 0 ))
-
-
-meridiemParser : Nld Meridiem
-meridiemParser =
-    Nld.choice
-        [ Nld.map (\_ -> AM) (Nld.word "am")
-        , Nld.map (\_ -> PM) (Nld.word "pm")
-        ]
-
-
-isClockToken : String -> Bool
-isClockToken tok =
-    case parseClockToken tok of
-        Just _ ->
-            True
-
-        Nothing ->
-            False
-
-
-parseClockToken : String -> Maybe ( Int, Int )
-parseClockToken tok =
+clockTimeFromString : Time -> String -> Maybe Time
+clockTimeFromString currentTime tok =
     case String.split ":" tok of
         [ hourStr, minuteStr ] ->
-            case ( String.toInt hourStr, String.toInt minuteStr ) of
+            case ( String.toInt hourStr, String.toInt (String.filter Char.isDigit minuteStr) ) of
                 ( Just hour, Just minute ) ->
+                    let
+                        meridiem =
+                            if String.endsWith "pm" tok || String.endsWith "p" tok then
+                                Pm
+
+                            else if String.endsWith "am" tok || String.endsWith "a" tok then
+                                Am
+
+                            else
+                                case ( modBy 12 hour < modBy 12 currentTime.hour, currentTime.meridiem ) of
+                                    ( True, m ) ->
+                                        m
+
+                                    ( False, Am ) ->
+                                        Pm
+
+                                    ( False, Pm ) ->
+                                        Am
+                    in
                     if hour >= 1 && hour <= 12 && minute >= 0 && minute < 60 then
-                        Just ( hour, minute )
+                        Just { hour = hour, minute = minute, meridiem = meridiem }
+
+                    else if hour <= 24 && minute >= 0 && minute < 60 then
+                        Just { hour = hour - 12, minute = minute, meridiem = Pm }
 
                     else
                         Nothing
@@ -269,369 +221,38 @@ parseClockToken tok =
             Nothing
 
 
-
--- Duration parsers
-
-
-simpleDurationParser : Nld Duration
-simpleDurationParser =
+activityEntryParser : Time -> Nld ActivityEntry
+activityEntryParser currentTime =
     Nld.choice
-        [ Nld.map2 (\_ _ -> 30)
-            (Nld.word "half")
-            (Nld.words [ "hour", "hours", "hr", "hrs" ])
-        , Nld.map2
-            (\n unit ->
-                if List.member unit [ "hour", "hours", "hr", "hrs" ] then
-                    n * 60
-
-                else
-                    n
-            )
-            Nld.nat
-            (Nld.choice
-                [ Nld.words [ "hour", "hours", "hr", "hrs" ]
-                , Nld.words [ "minute", "minutes", "min", "mins" ]
-                ]
-            )
-        , Nld.map2 (\_ _ -> 60)
-            (Nld.words [ "one", "an" ])
-            (Nld.words [ "hour", "hours", "hr", "hrs" ])
+        [ Nld.map3 ActivityEntry activityParser (whenParser currentTime) (Nld.map Just minutesParser)
+        , Nld.map3 ActivityEntry activityParser (whenParser currentTime) (Nld.succeed Nothing)
         ]
 
 
-
--- Combined parsers
-
-
-activityWithDuration : Nld ( Activity, Duration )
-activityWithDuration =
-    Nld.tuple2 activityParser simpleDurationParser
-
-
-activityWithTime : Nld ( Activity, TimeSpec )
-activityWithTime =
-    Nld.tuple2 activityParser timeParser
-
-
-
--- Main parsing function
-
-
-splitTimeTokens : String -> List String
-splitTimeTokens tok =
+tokenize : String -> List String
+tokenize input =
     let
-        prefix =
-            String.dropRight 2 tok
-
-        isClockPrefix str =
-            String.length str
-                > 0
-                && String.all (\c -> Char.isDigit c || c == ':') str
-                && String.any Char.isDigit str
+        timeRegex =
+            Regex.fromString "\\d{1,2}(:\\d{2})?\\s*(am|pm)?"
+                |> Debug.log "timeRegex"
+                |> Maybe.withDefault Regex.never
     in
-    if String.endsWith "am" tok && isClockPrefix prefix then
-        [ prefix, "am" ]
-
-    else if String.endsWith "pm" tok && isClockPrefix prefix then
-        [ prefix, "pm" ]
-
-    else
-        [ tok ]
+    input
+        |> String.toLower
+        |> Regex.replace timeRegex (.match >> String.words >> String.join "")
+        |> String.words
 
 
-parseActivitySmart : String -> List ParsedActivity
-parseActivitySmart input =
+parseActivity : Time -> String -> List ActivityEntry
+parseActivity currentTime input =
     let
         tokens =
-            input
-                |> String.toLower
-                |> String.words
-                |> List.filter (\t -> t /= "")
-                |> List.concatMap splitTimeTokens
+            tokenize input
 
         _ =
             Debug.log "tokens" tokens
-
-        withAllThree =
-            Nld.runTake 5
-                (Nld.map2
-                    (\( a, d ) t ->
-                        { activity = a
-                        , duration = Just d
-                        , timeSpec = Just t
-                        }
-                    )
-                    activityWithDuration
-                    timeParser
-                )
-                tokens
-
-        withDurationOnly =
-            Nld.runTake 5
-                (Nld.map
-                    (\( a, d ) ->
-                        { activity = a
-                        , duration = Just d
-                        , timeSpec = Nothing
-                        }
-                    )
-                    activityWithDuration
-                )
-                tokens
-
-        withTimeOnly =
-            Nld.runTake 5
-                (Nld.map
-                    (\( a, t ) ->
-                        { activity = a
-                        , duration = Nothing
-                        , timeSpec = Just t
-                        }
-                    )
-                    activityWithTime
-                )
-                tokens
-
-        activityOnly =
-            Nld.runTake 5
-                (Nld.map
-                    (\a ->
-                        { activity = a
-                        , duration = Nothing
-                        , timeSpec = Nothing
-                        }
-                    )
-                    activityParser
-                )
-                tokens
-
-        results =
-            withAllThree ++ withDurationOnly ++ withTimeOnly ++ activityOnly
-
-        _ =
-            results
-                |> List.map (Debug.log "result")
     in
-    results
-
-
-scoreTimeSpec : TimeSpec -> Int
-scoreTimeSpec ts =
-    case ts of
-        Now ->
-            2
-
-        TimeDetail detail ->
-            let
-                dayScore =
-                    case detail.day of
-                        Today ->
-                            0
-
-                        Yesterday ->
-                            2
-
-                        OnDay _ ->
-                            2
-
-                timeScore =
-                    case ( detail.clock, detail.timeOfDay ) of
-                        ( Just _, _ ) ->
-                            3
-
-                        ( Nothing, Just _ ) ->
-                            1
-
-                        ( Nothing, Nothing ) ->
-                            0
-            in
-            dayScore + timeScore
-
-
-parseBestActivity : String -> Maybe ParsedActivity
-parseBestActivity input =
-    case parseActivitySmart input of
-        [] ->
-            Nothing
-
-        results ->
-            let
-                scored =
-                    List.map
-                        (\r ->
-                            let
-                                durationScore =
-                                    if r.duration /= Nothing then
-                                        10
-
-                                    else
-                                        0
-
-                                timeScore =
-                                    case r.timeSpec of
-                                        Nothing ->
-                                            0
-
-                                        Just ts ->
-                                            scoreTimeSpec ts
-                            in
-                            ( durationScore + timeScore, r )
-                        )
-                        results
-
-                sorted =
-                    List.sortBy (\( s, _ ) -> -s) scored
-            in
-            case sorted of
-                ( _, best ) :: _ ->
-                    Just best
-
-                [] ->
-                    Nothing
-
-
-
--- DISPLAY FUNCTIONS
-
-
-type alias ClockTime =
-    { hour : Int
-    , minute : Int
-    , meridiem : Meridiem
-    }
-
-
-type alias ResolvedDateTime =
-    { date : Date.Date
-    , time : ClockTime
-    }
-
-
-resolveDateTime :
-    ResolvedDateTime
-    -> Maybe TimeSpec
-    -> { date : Date.Date, time : ClockTime }
-resolveDateTime base maybeSpec =
-    let
-        defaultDetail =
-            { day = Today, timeOfDay = Just Noon, clock = Nothing }
-    in
-    case maybeSpec of
-        Nothing ->
-            { date = base.date
-            , time = clockFromDetail defaultDetail
-            }
-
-        Just Now ->
-            { date = base.date
-            , time = base.time
-            }
-
-        Just (TimeDetail detail) ->
-            { date = resolveDay base.date detail.day
-            , time = clockFromDetail detail
-            }
-
-
-resolveDay : Date.Date -> DaySpec -> Date.Date
-resolveDay baseDate daySpec =
-    case daySpec of
-        Today ->
-            baseDate
-
-        Yesterday ->
-            Date.add Date.Days -1 baseDate
-
-        OnDay target ->
-            let
-                baseIndex =
-                    Date.weekdayNumber baseDate
-
-                targetIndex =
-                    Date.weekdayToNumber target
-
-                delta =
-                    modBy 7 (baseIndex - targetIndex)
-            in
-            Date.add Date.Days -delta baseDate
-
-
-clockFromDetail : TimeDetailData -> ClockTime
-clockFromDetail detail =
-    case detail.clock of
-        Just clock ->
-            let
-                meridiem =
-                    case clock.meridiem of
-                        Just m ->
-                            m
-
-                        Nothing ->
-                            detail.timeOfDay
-                                |> Maybe.map meridiemForTimeOfDay
-                                |> Maybe.withDefault AM
-            in
-            { hour = clock.hour, minute = clock.minute, meridiem = meridiem }
-
-        Nothing ->
-            detail.timeOfDay
-                |> Maybe.withDefault Noon
-                |> defaultClockForTimeOfDay
-
-
-defaultClockForTimeOfDay : TimeOfDay -> ClockTime
-defaultClockForTimeOfDay tod =
-    case tod of
-        Morning ->
-            { hour = 9, minute = 0, meridiem = AM }
-
-        Afternoon ->
-            { hour = 3, minute = 0, meridiem = PM }
-
-        Evening ->
-            { hour = 6, minute = 0, meridiem = PM }
-
-        Night ->
-            { hour = 9, minute = 0, meridiem = PM }
-
-        Noon ->
-            { hour = 12, minute = 0, meridiem = PM }
-
-
-meridiemForTimeOfDay : TimeOfDay -> Meridiem
-meridiemForTimeOfDay tod =
-    case tod of
-        Morning ->
-            AM
-
-        Afternoon ->
-            PM
-
-        Evening ->
-            PM
-
-        Night ->
-            PM
-
-        Noon ->
-            PM
-
-
-formatClock : ClockTime -> String
-formatClock clock =
-    let
-        minuteString =
-            String.fromInt clock.minute |> String.padLeft 2 '0'
-
-        hourString =
-            case clock.meridiem of
-                AM ->
-                    String.fromInt clock.hour
-
-                PM ->
-                    String.fromInt (clock.hour + 12)
-    in
-    hourString ++ ":" ++ minuteString
+    Nld.runTake 5 (activityEntryParser currentTime) tokens
 
 
 
@@ -648,7 +269,7 @@ type alias Flags =
 
 type alias Model =
     { input : String
-    , baseDateTime : ResolvedDateTime
+    , now : DateTime
     }
 
 
@@ -659,29 +280,24 @@ type Msg
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
-        baseDate =
+        currentDate =
             Date.fromOrdinalDate flags.year flags.dayOfYear
 
-        ( hour12, meridiem ) =
-            if flags.hour == 0 then
-                ( 12, AM )
+        currentTime =
+            { hour = modBy 12 (flags.hour + 11) + 1
+            , minute = flags.minute
+            , meridiem =
+                if flags.hour < 12 then
+                    Am
 
-            else if flags.hour < 12 then
-                ( flags.hour, AM )
-
-            else if flags.hour == 12 then
-                ( 12, PM )
-
-            else
-                ( flags.hour - 12, PM )
-
-        baseTime =
-            { hour = hour12, minute = flags.minute, meridiem = meridiem }
+                else
+                    Pm
+            }
     in
     ( { input = ""
-      , baseDateTime =
-            { date = baseDate
-            , time = baseTime
+      , now =
+            { date = currentDate
+            , time = currentTime
             }
       }
     , Cmd.none
@@ -726,7 +342,7 @@ view model =
                     , Attr.attribute "for" "activity-input"
                     , Attr.attribute "aria-live" "polite"
                     ]
-                    [ viewBestMatch model.baseDateTime model.input ]
+                    [ viewBestMatch model.now model.input ]
                 ]
             ]
         , Html.section []
@@ -737,7 +353,7 @@ view model =
                         (\example ->
                             Html.div []
                                 [ Html.dt [] [ Html.text example ]
-                                , Html.dd [] [ viewBestMatch model.baseDateTime example ]
+                                , Html.dd [] [ viewBestMatch model.now example ]
                                 ]
                         )
                 )
@@ -751,7 +367,7 @@ examples =
     , "just went for a jog"
     , "swam for an hour on Thursday"
     , "bike ride, tues 3:30pm"
-    , "yoga 3pm"
+    , "yoga 3 pm"
     ]
 
 
@@ -765,27 +381,54 @@ main =
         }
 
 
-viewDuration : Duration -> Html msg
-viewDuration duration =
+viewMinutes : Int -> Html msg
+viewMinutes minutes =
     let
         hours =
-            duration // 60
+            minutes // 60
 
-        minutes =
-            modBy 60 duration
+        minutes_ =
+            modBy 60 minutes
     in
     Html.node "duration-format"
-        [ Attr.property "duration" (Json.Encode.object [ ( "hours", Json.Encode.int hours ), ( "minutes", Json.Encode.int minutes ) ])
+        [ Attr.property "duration"
+            (Json.Encode.object
+                [ ( "hours", Json.Encode.int hours )
+                , ( "minutes", Json.Encode.int minutes_ )
+                ]
+            )
         ]
         []
 
 
-viewDateTime : ResolvedDateTime -> Html msg
+viewDateTime : DateTime -> Html msg
 viewDateTime dateTime =
     Html.node "date-time-format"
-        [ Attr.property "dateTime" (Json.Encode.object [ ( "date", Json.Encode.string (Date.format "MMM d, y" dateTime.date) ), ( "time", Json.Encode.string (formatClock dateTime.time) ) ])
+        [ Attr.property "dateTime"
+            (Json.Encode.object
+                [ ( "date"
+                  , Json.Encode.string (Date.format "MMM d, y" dateTime.date)
+                  )
+                , ( "time", Json.Encode.string (formatTime dateTime.time) )
+                ]
+            )
         ]
         []
+
+
+formatTime : Time -> String
+formatTime time =
+    String.fromInt time.hour
+        ++ ":"
+        ++ String.padLeft 2 '0' (String.fromInt time.minute)
+        ++ " "
+        ++ (case time.meridiem of
+                Am ->
+                    "AM"
+
+                Pm ->
+                    "PM"
+           )
 
 
 viewActivity : Activity -> Html msg
@@ -805,24 +448,122 @@ viewActivity activity =
 
 
 viewBestMatch :
-    ResolvedDateTime
+    DateTime
     -> String
     -> Html msg
-viewBestMatch base input =
-    case parseBestActivity input of
-        Nothing ->
+viewBestMatch currentDateTime input =
+    case parseActivity currentDateTime.time input of
+        [] ->
             Html.text "No match yet"
 
-        Just parsed ->
+        parsed :: _ ->
             let
-                duration =
-                    parsed.duration |> Maybe.withDefault 30
-
                 resolved =
-                    resolveDateTime base parsed.timeSpec
+                    resolveDateTime currentDateTime parsed.when
             in
             Html.div []
                 [ viewActivity parsed.activity
-                , viewDuration duration
+                , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
                 , viewDateTime resolved
                 ]
+
+
+resolveDateTime :
+    DateTime
+    -> When
+    -> DateTime
+resolveDateTime current when =
+    let
+        defaultTime =
+            { hour = 12, minute = 0, meridiem = Pm }
+    in
+    case when of
+        Today (Just time) ->
+            { date = current.date
+            , time = time
+            }
+
+        Today Nothing ->
+            current
+
+        DaysAgo days (Just time) ->
+            { date = Date.add Date.Days -days current.date
+            , time = time
+            }
+
+        DaysAgo days Nothing ->
+            { date = Date.add Date.Days -days current.date
+            , time = defaultTime
+            }
+
+        MinutesAgo minutes ->
+            { date = current.date
+            , time = subtractMinutes minutes current.time
+            }
+
+        OnDay weekday (Just time) ->
+            let
+                delta =
+                    modBy 7 (Date.weekdayNumber current.date - Date.weekdayToNumber weekday)
+            in
+            { date = Date.add Date.Days -delta current.date
+            , time = time
+            }
+
+        OnDay weekday Nothing ->
+            let
+                delta =
+                    modBy 7 (Date.weekdayNumber current.date - Date.weekdayToNumber weekday)
+            in
+            { date = Date.add Date.Days -delta current.date
+            , time = defaultTime
+            }
+
+
+subtractMinutes : Int -> Time -> Time
+subtractMinutes minutes time =
+    let
+        -- Convert 12-hour to 24-hour
+        hour24 =
+            case time.meridiem of
+                Am ->
+                    if time.hour == 12 then
+                        0
+
+                    else
+                        time.hour
+
+                Pm ->
+                    if time.hour == 12 then
+                        12
+
+                    else
+                        time.hour + 12
+
+        -- Total minutes since midnight, subtract, and wrap to 0..1439
+        newTotal =
+            modBy (24 * 60) (hour24 * 60 + time.minute - minutes)
+
+        -- Convert back to 12-hour
+        newHour24 =
+            newTotal // 60
+
+        newMinute =
+            modBy 60 newTotal
+
+        newMeridiem =
+            if newHour24 < 12 then
+                Am
+
+            else
+                Pm
+
+        newHour =
+            case modBy 12 newHour24 of
+                0 ->
+                    12
+
+                h ->
+                    h
+    in
+    { hour = newHour, minute = newMinute, meridiem = newMeridiem }
