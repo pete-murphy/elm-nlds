@@ -208,15 +208,50 @@ parseActivity currentTime input =
         _ =
             Debug.log "tokens" tokens
     in
-    Nld.runTake 5 (activityEntryParser currentTime) tokens
-        -- Prefer matches with "minutes" / "when" specified
-        |> List.sortBy
-            (\entry ->
-                (entry.minutes |> Maybe.map (\_ -> 0) >> Maybe.withDefault 2)
-                    + (entry.when |> Maybe.map (\_ -> 0) >> Maybe.withDefault 1)
-            )
+    Nld.runTake 20 (activityEntryParser currentTime) tokens
+        |> List.sortBy scoreEntry
         |> Debug.log "results"
         |> List.map (Debug.log "entry")
+
+
+scoreEntry : ActivityEntry -> Int
+scoreEntry entry =
+    let
+        minutesScore =
+            case entry.minutes of
+                Just _ ->
+                    0
+
+                Nothing ->
+                    2
+
+        whenScore =
+            case entry.when of
+                Just (MinutesAgo _) ->
+                    0
+
+                Just (Today (Just _)) ->
+                    1
+
+                Just (DaysAgo _ (Just _)) ->
+                    0
+
+                Just (OnDay _ (Just _)) ->
+                    0
+
+                Just (Today Nothing) ->
+                    2
+
+                Just (DaysAgo _ Nothing) ->
+                    1
+
+                Just (OnDay _ Nothing) ->
+                    1
+
+                Nothing ->
+                    3
+    in
+    minutesScore + whenScore
 
 
 
@@ -542,40 +577,58 @@ subtractMinutes minutes time =
 
 clockTimeFromString : Time -> String -> Maybe Time
 clockTimeFromString currentTime tok =
+    let
+        parseMeridiem hour =
+            if String.endsWith "pm" tok || String.endsWith "p" tok then
+                Pm
+
+            else if String.endsWith "am" tok || String.endsWith "a" tok then
+                Am
+
+            else
+                case ( modBy 12 hour < modBy 12 currentTime.hour, currentTime.meridiem ) of
+                    ( True, m ) ->
+                        m
+
+                    ( False, Am ) ->
+                        Pm
+
+                    ( False, Pm ) ->
+                        Am
+
+        toTime hour minute =
+            let
+                meridiem =
+                    parseMeridiem hour
+            in
+            if hour >= 1 && hour <= 12 && minute >= 0 && minute < 60 then
+                Just { hour = hour, minute = minute, meridiem = meridiem }
+
+            else if hour > 12 && hour <= 24 && minute >= 0 && minute < 60 then
+                Just { hour = hour - 12, minute = minute, meridiem = Pm }
+
+            else
+                Nothing
+    in
     case String.split ":" tok of
         [ hourStr, minuteStr ] ->
             case ( String.toInt hourStr, String.toInt (String.filter Char.isDigit minuteStr) ) of
                 ( Just hour, Just minute ) ->
-                    let
-                        meridiem =
-                            if String.endsWith "pm" tok || String.endsWith "p" tok then
-                                Pm
-
-                            else if String.endsWith "am" tok || String.endsWith "a" tok then
-                                Am
-
-                            else
-                                case ( modBy 12 hour < modBy 12 currentTime.hour, currentTime.meridiem ) of
-                                    ( True, m ) ->
-                                        m
-
-                                    ( False, Am ) ->
-                                        Pm
-
-                                    ( False, Pm ) ->
-                                        Am
-                    in
-                    if hour >= 1 && hour <= 12 && minute >= 0 && minute < 60 then
-                        Just { hour = hour, minute = minute, meridiem = meridiem }
-
-                    else if hour <= 24 && minute >= 0 && minute < 60 then
-                        Just { hour = hour - 12, minute = minute, meridiem = Pm }
-
-                    else
-                        Nothing
+                    toTime hour minute
 
                 _ ->
                     Nothing
+
+        [ bare ] ->
+            if String.all Char.isDigit bare then
+                -- Bare numbers like "1" or "3" are too ambiguous
+                -- (could be duration, quantity, etc.) — require am/pm suffix
+                Nothing
+
+            else
+                String.filter Char.isDigit bare
+                    |> String.toInt
+                    |> Maybe.andThen (\hour -> toTime hour 0)
 
         _ ->
             Nothing

@@ -7148,54 +7148,83 @@ var $elm$core$String$endsWith = _String_endsWith;
 var $elm$core$String$filter = _String_filter;
 var $author$project$Main$clockTimeFromString = F2(
 	function (currentTime, tok) {
-		var _v0 = A2($elm$core$String$split, ':', tok);
-		if ((_v0.b && _v0.b.b) && (!_v0.b.b.b)) {
-			var hourStr = _v0.a;
-			var _v1 = _v0.b;
-			var minuteStr = _v1.a;
-			var _v2 = _Utils_Tuple2(
-				$elm$core$String$toInt(hourStr),
-				$elm$core$String$toInt(
-					A2($elm$core$String$filter, $elm$core$Char$isDigit, minuteStr)));
-			if ((_v2.a.$ === 'Just') && (_v2.b.$ === 'Just')) {
-				var hour = _v2.a.a;
-				var minute = _v2.b.a;
-				var meridiem = function () {
-					if (A2($elm$core$String$endsWith, 'pm', tok) || A2($elm$core$String$endsWith, 'p', tok)) {
-						return $author$project$Main$Pm;
+		var parseMeridiem = function (hour) {
+			if (A2($elm$core$String$endsWith, 'pm', tok) || A2($elm$core$String$endsWith, 'p', tok)) {
+				return $author$project$Main$Pm;
+			} else {
+				if (A2($elm$core$String$endsWith, 'am', tok) || A2($elm$core$String$endsWith, 'a', tok)) {
+					return $author$project$Main$Am;
+				} else {
+					var _v4 = _Utils_Tuple2(
+						_Utils_cmp(
+							A2($elm$core$Basics$modBy, 12, hour),
+							A2($elm$core$Basics$modBy, 12, currentTime.hour)) < 0,
+						currentTime.meridiem);
+					if (_v4.a) {
+						var m = _v4.b;
+						return m;
 					} else {
-						if (A2($elm$core$String$endsWith, 'am', tok) || A2($elm$core$String$endsWith, 'a', tok)) {
-							return $author$project$Main$Am;
+						if (_v4.b.$ === 'Am') {
+							var _v5 = _v4.b;
+							return $author$project$Main$Pm;
 						} else {
-							var _v3 = _Utils_Tuple2(
-								_Utils_cmp(
-									A2($elm$core$Basics$modBy, 12, hour),
-									A2($elm$core$Basics$modBy, 12, currentTime.hour)) < 0,
-								currentTime.meridiem);
-							if (_v3.a) {
-								var m = _v3.b;
-								return m;
-							} else {
-								if (_v3.b.$ === 'Am') {
-									var _v4 = _v3.b;
-									return $author$project$Main$Pm;
-								} else {
-									var _v5 = _v3.b;
-									return $author$project$Main$Am;
-								}
-							}
+							var _v6 = _v4.b;
+							return $author$project$Main$Am;
 						}
 					}
-				}();
-				return ((hour >= 1) && ((hour <= 12) && ((minute >= 0) && (minute < 60)))) ? $elm$core$Maybe$Just(
-					{hour: hour, meridiem: meridiem, minute: minute}) : (((hour <= 24) && ((minute >= 0) && (minute < 60))) ? $elm$core$Maybe$Just(
-					{hour: hour - 12, meridiem: $author$project$Main$Pm, minute: minute}) : $elm$core$Maybe$Nothing);
-			} else {
-				return $elm$core$Maybe$Nothing;
+				}
 			}
-		} else {
-			return $elm$core$Maybe$Nothing;
+		};
+		var toTime = F2(
+			function (hour, minute) {
+				var meridiem = parseMeridiem(hour);
+				return ((hour >= 1) && ((hour <= 12) && ((minute >= 0) && (minute < 60)))) ? $elm$core$Maybe$Just(
+					{hour: hour, meridiem: meridiem, minute: minute}) : (((hour > 12) && ((hour <= 24) && ((minute >= 0) && (minute < 60)))) ? $elm$core$Maybe$Just(
+					{hour: hour - 12, meridiem: $author$project$Main$Pm, minute: minute}) : $elm$core$Maybe$Nothing);
+			});
+		var _v0 = A2($elm$core$String$split, ':', tok);
+		_v0$2:
+		while (true) {
+			if (_v0.b) {
+				if (_v0.b.b) {
+					if (!_v0.b.b.b) {
+						var hourStr = _v0.a;
+						var _v1 = _v0.b;
+						var minuteStr = _v1.a;
+						var _v2 = _Utils_Tuple2(
+							$elm$core$String$toInt(hourStr),
+							$elm$core$String$toInt(
+								A2($elm$core$String$filter, $elm$core$Char$isDigit, minuteStr)));
+						if ((_v2.a.$ === 'Just') && (_v2.b.$ === 'Just')) {
+							var hour = _v2.a.a;
+							var minute = _v2.b.a;
+							return A2(toTime, hour, minute);
+						} else {
+							return $elm$core$Maybe$Nothing;
+						}
+					} else {
+						break _v0$2;
+					}
+				} else {
+					var bare = _v0.a;
+					if (A2($elm$core$String$all, $elm$core$Char$isDigit, bare)) {
+						return $elm$core$Maybe$Nothing;
+					} else {
+						var _v3 = $elm$core$String$toInt(
+							A2($elm$core$String$filter, $elm$core$Char$isDigit, bare));
+						if (_v3.$ === 'Just') {
+							var hour = _v3.a;
+							return A2(toTime, hour, 0);
+						} else {
+							return $elm$core$Maybe$Nothing;
+						}
+					}
+				}
+			} else {
+				break _v0$2;
+			}
 		}
+		return $elm$core$Maybe$Nothing;
 	});
 var $author$project$Nld$tokenFilterMap = function (f) {
 	return A2(
@@ -7439,11 +7468,6 @@ var $author$project$Main$activityEntryParser = function (currentTime) {
 				$author$project$Nld$succeed($elm$core$Maybe$Nothing))
 			]));
 };
-var $elm$core$Basics$composeR = F3(
-	function (f, g, x) {
-		return g(
-			f(x));
-	});
 var $elm$core$Debug$log = _Debug_log;
 var $elm$core$Basics$negate = function (n) {
 	return -n;
@@ -7556,7 +7580,59 @@ var $author$project$Nld$runTake = F3(
 					$author$project$Nld$tokenPositionsFromList(tokens),
 					-1)));
 	});
+var $author$project$Main$scoreEntry = function (entry) {
+	var whenScore = function () {
+		var _v1 = entry.when;
+		if (_v1.$ === 'Just') {
+			switch (_v1.a.$) {
+				case 'MinutesAgo':
+					return 0;
+				case 'Today':
+					if (_v1.a.a.$ === 'Just') {
+						return 1;
+					} else {
+						var _v4 = _v1.a.a;
+						return 2;
+					}
+				case 'DaysAgo':
+					if (_v1.a.b.$ === 'Just') {
+						var _v2 = _v1.a;
+						return 0;
+					} else {
+						var _v5 = _v1.a;
+						var _v6 = _v5.b;
+						return 1;
+					}
+				default:
+					if (_v1.a.b.$ === 'Just') {
+						var _v3 = _v1.a;
+						return 0;
+					} else {
+						var _v7 = _v1.a;
+						var _v8 = _v7.b;
+						return 1;
+					}
+			}
+		} else {
+			return 3;
+		}
+	}();
+	var minutesScore = function () {
+		var _v0 = entry.minutes;
+		if (_v0.$ === 'Just') {
+			return 0;
+		} else {
+			return 2;
+		}
+	}();
+	return minutesScore + whenScore;
+};
 var $elm$core$List$sortBy = _List_sortBy;
+var $elm$core$Basics$composeR = F3(
+	function (f, g, x) {
+		return g(
+			f(x));
+	});
 var $elm$regex$Regex$Match = F4(
 	function (match, index, number, submatches) {
 		return {index: index, match: match, number: number, submatches: submatches};
@@ -7604,26 +7680,10 @@ var $author$project$Main$parseActivity = F2(
 				'results',
 				A2(
 					$elm$core$List$sortBy,
-					function (entry) {
-						return A3(
-							$elm$core$Basics$composeR,
-							$elm$core$Maybe$map(
-								function (_v1) {
-									return 0;
-								}),
-							$elm$core$Maybe$withDefault(2),
-							entry.minutes) + A3(
-							$elm$core$Basics$composeR,
-							$elm$core$Maybe$map(
-								function (_v2) {
-									return 0;
-								}),
-							$elm$core$Maybe$withDefault(1),
-							entry.when);
-					},
+					$author$project$Main$scoreEntry,
 					A3(
 						$author$project$Nld$runTake,
-						5,
+						20,
 						$author$project$Main$activityEntryParser(currentTime),
 						tokens))));
 	});

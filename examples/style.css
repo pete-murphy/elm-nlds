@@ -71,14 +71,16 @@ section {
 }
 
 h1, h2 {
-  letter-spacing: -0.02em;
-  font-stretch: expanded;
   margin: 0;
 }
 h1 {
+  letter-spacing: -0.02em;
+  font-stretch: expanded;
   font-size: 2rem;
 }
 h2 {
+  letter-spacing: -0.01em;
+  font-stretch: semi-expanded;
   font-size: 1.5rem;
 }
 header p {

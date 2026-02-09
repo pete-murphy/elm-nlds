@@ -88,8 +88,12 @@
             const { date, time } = this._dateTime;
             const dateTime = new Date(`${date} ${time}`);
             this.innerHTML = new Intl.DateTimeFormat(undefined, {
-              dateStyle: "medium",
-              timeStyle: "short",
+              weekday: "short", // Mon, Tue, Wed, ...
+              // year: "numeric", // 2026
+              month: "short", // Feb
+              day: "numeric", // 9
+              hour: "numeric",
+              minute: "2-digit",
             }).format(dateTime);
           }
         },
