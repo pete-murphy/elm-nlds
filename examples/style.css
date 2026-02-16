@@ -1,25 +1,7 @@
-/* === Reset === */
 *,
 *::before,
 *::after {
   box-sizing: border-box;
-}
-
-* {
-  margin: 0;
-}
-
-html {
-  min-height: 100%;
-}
-
-img,
-picture,
-video,
-canvas,
-svg {
-  display: block;
-  max-width: 100%;
 }
 
 input,
@@ -29,180 +11,85 @@ select {
   font: inherit;
 }
 
-/* === Flexoki Palette === */
-:root {
-  /* Base */
-  --flexoki-black: #100f0f;
-  --flexoki-paper: #fffcf0;
-  --flexoki-50: #f2f0e5;
-  --flexoki-100: #e6e4d9;
-  --flexoki-150: #dad8ce;
-  --flexoki-200: #cecdc3;
-  --flexoki-300: #b7b5ac;
-  --flexoki-400: #9f9d96;
-  --flexoki-500: #878580;
-  --flexoki-600: #6f6e69;
-  --flexoki-700: #575653;
-  --flexoki-800: #403e3c;
-  --flexoki-850: #343331;
-  --flexoki-900: #282726;
-  --flexoki-950: #1c1b1a;
-
-  /* Red */
-  --flexoki-red-400: #d14d41;
-  --flexoki-red-600: #af3029;
-
-  /* Orange */
-  --flexoki-orange-400: #da702c;
-  --flexoki-orange-600: #bc5215;
-
-  /* Yellow */
-  --flexoki-yellow-400: #d0a215;
-  --flexoki-yellow-600: #ad8301;
-
-  /* Green */
-  --flexoki-green-400: #879a39;
-  --flexoki-green-600: #66800b;
-
-  /* Cyan */
-  --flexoki-cyan-400: #3aa99f;
-  --flexoki-cyan-600: #24837b;
-
-  /* Blue */
-  --flexoki-blue-400: #4385be;
-  --flexoki-blue-600: #205ea6;
-
-  /* Purple */
-  --flexoki-purple-400: #8b7ec8;
-  --flexoki-purple-600: #5e409d;
-
-  /* Magenta */
-  --flexoki-magenta-400: #ce5d97;
-  --flexoki-magenta-600: #a02f6f;
-}
-
-/* === Semantic Tokens === */
 :root {
   color-scheme: light dark;
   text-size-adjust: none;
-  hanging-punctuation: first allow-end last;
-
-  /*
-   * Flexoki mapping (see stephango.com/flexoki):
-   *   bg   = main background       | light: paper,    dark: black
-   *   bg-2 = secondary background  | light: base-50,  dark: base-950
-   *   ui   = borders               | light: base-100, dark: base-900
-   *   ui-2 = hovered borders       | light: base-150, dark: base-850
-   *   ui-3 = active borders        | light: base-200, dark: base-800
-   *   tx-3 = faint text            | light: base-300, dark: base-700
-   *   tx-2 = muted text            | light: base-600, dark: base-500
-   *   tx   = primary text          | light: black,    dark: base-200
-   */
-  --bg: light-dark(var(--flexoki-paper), var(--flexoki-black));
-  --bg-2: light-dark(var(--flexoki-50), var(--flexoki-950));
-  --ui: light-dark(var(--flexoki-100), var(--flexoki-900));
-  --ui-2: light-dark(var(--flexoki-150), var(--flexoki-850));
-  --ui-3: light-dark(var(--flexoki-200), var(--flexoki-800));
-  --tx-3: light-dark(var(--flexoki-300), var(--flexoki-700));
-  --tx-2: light-dark(var(--flexoki-600), var(--flexoki-500));
-  --tx: light-dark(var(--flexoki-black), var(--flexoki-200));
-
-  /* Accent tokens: light uses 600, dark uses 400 */
-  --re: light-dark(var(--flexoki-red-600), var(--flexoki-red-400));
-  --or: light-dark(var(--flexoki-orange-600), var(--flexoki-orange-400));
-  --ye: light-dark(var(--flexoki-yellow-600), var(--flexoki-yellow-400));
-  --gr: light-dark(var(--flexoki-green-600), var(--flexoki-green-400));
-  --cy: light-dark(var(--flexoki-cyan-600), var(--flexoki-cyan-400));
-  --bl: light-dark(var(--flexoki-blue-600), var(--flexoki-blue-400));
-  --pu: light-dark(var(--flexoki-purple-600), var(--flexoki-purple-400));
-  --ma: light-dark(var(--flexoki-magenta-600), var(--flexoki-magenta-400));
 }
 
-/* === Base === */
 body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-family: system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--tx);
   padding: 2.5rem 1rem;
+  margin: 0;
 }
 
-/* === Layout === */
-main {
-  margin: 0 auto;
-  display: grid;
-  gap: 3rem;
-  max-width: 36rem;
-}
-
-header {
-  display: grid;
-  gap: 0.5rem;
-}
-
-section {
-  display: grid;
-  gap: 1.5rem;
-}
-
-/* === Typography === */
 h1,
 h2 {
   line-height: 1.2;
 }
 
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+}
+
 h1 {
-  /* expanded */
-  font-stretch: semi-expanded;
   letter-spacing: -0.025em;
   font-size: 1.75rem;
 }
 
 h2 {
-  font-size: 0.8125rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--tx);
 }
 
 header p {
-  color: var(--tx-2);
+  color: oklch(from CanvasText l c h / 0.5);
 }
 
-/* === Form Elements === */
-div:has(> input),
+form:has(> textarea),
 div:has(> output) {
   display: grid;
   gap: 0.5rem;
+  container-type: inline-size;
+}
+
+main {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 40ch;
+}
+
+section {
+  display: grid;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 label {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--tx);
+  display: inline-grid;
 }
 
-input {
+textarea {
+  max-inline-size: 100cqi;
+  field-sizing: content;
+  resize: vertical;
   padding: 0.625rem 0.75rem;
   border-radius: 0.375rem;
-  border: 1px solid var(--tx-2);
-  background: var(--bg);
-  color: var(--tx);
+  border: 1px solid currentColor;
+  background: transparent;
   transition: border-color 0.15s;
-
-  &::placeholder {
-    color: var(--flexoki-500);
-  }
-
-  &:hover {
-    border-color: var(--tx);
-  }
+  font-size: 1.125rem;
 
   &:focus {
-    outline: 2px solid var(--cy);
+    outline: 2px solid currentColor;
     outline-offset: 2px;
   }
 }
@@ -210,83 +97,110 @@ input {
 output {
   padding: 0.875rem 1rem;
   border-radius: 0.375rem;
-  border: 1px solid var(--tx-2);
-  background: var(--bg-2);
+  background: oklch(from CanvasText l c h / 0.05);
   min-height: 2.75rem;
 
   & > div {
     display: grid;
-    gap: 0.25rem;
+  }
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
   }
 }
 
-/* === Definition List (Examples) === */
-dl {
-  display: grid;
-}
-
-dl > div {
-  padding-block: 1rem;
-}
-
-dt {
-  font-weight: 600;
-
-  &::before {
-    content: "\201C";
-    color: var(--tx-2);
-  }
-
-  &::after {
-    content: "\201D";
-    color: var(--tx-2);
-  }
-}
-
-dd {
-  font-size: 0.875rem;
-  color: var(--tx);
-  margin-top: 0.375rem;
-
-  &::before {
-    content: "→";
-    display: inline-block;
-    color: var(--tx-2);
-    padding-inline-end: 0.5ch;
-  }
-
-  & > div {
-    display: inline-grid;
-  }
-}
-
-/* === Custom Elements === */
-duration-format::before {
-  content: "⏰ ";
-  display: inline-block;
-  white-space-collapse: preserve;
-}
-
-date-time-format::before {
-  content: "📅 ";
-  display: inline-block;
-  white-space-collapse: preserve;
-}
-
-div:has(> relative-time-format) {
+ul {
   display: flex;
-  gap: 0.5ch;
-  relative-time {
-    font-style: italic;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  container-type: inline-size;
+}
+
+button {
+  font: inherit;
+  /* font-size: 0.8125rem; */
+  font-weight: 500;
+  padding: 0.375rem 0.5rem;
+  color: LinkText;
+  border-radius: 0.375rem;
+  background: transparent;
+  border: 1px solid oklch(from CanvasText l c h / 0.5);
+  border: none;
+  cursor: pointer;
+  will-change: transform;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s,
+    scale 0.15s;
+  &:hover {
+    background: oklch(from CanvasText l c h / 0.05);
+  }
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+  &:active {
+    background: oklch(from CanvasText l c h / 0.1);
+    scale: 0.98;
+  }
+}
+
+li > button {
+  max-inline-size: 100cqi;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-box-trim: trim-both;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-style: italic;
+  &::before {
+    content: "“";
+    color: oklch(from CanvasText l c h / 0.75);
+  }
+  &::after {
+    content: "”";
+    color: oklch(from CanvasText l c h / 0.75);
+  }
+  padding: 0.375rem 0.5rem;
+  border: 1px solid oklch(from CanvasText l c h / 0.2);
+  border-radius: 0.375rem;
+  background: oklch(from CanvasText l c h / 0.05);
+  color: currentColor;
+  cursor: pointer;
+  transition:
+    border-color 0s,
+    color 0s,
+    background 0s;
+
+  &:hover {
+    border-color: currentColor;
+    color: currentColor;
+  }
+
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  &:active {
+    background: oklch(from CanvasText l c h / 0.1);
+  }
+}
+
+div:has(> date-time-format) {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.5rem;
+  & relative-time-format {
     &::before {
       content: "(";
-      display: inline-block;
-      white-space-collapse: preserve;
     }
     &::after {
       content: ")";
-      display: inline-block;
-      white-space-collapse: preserve;
     }
   }
 }

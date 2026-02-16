@@ -1,7 +1,5 @@
 # elm-nlds
 
-[![Build Status](https://github.com/pete-murphy/elm-nlds/workflows/CI/badge.svg)](https://github.com/pete-murphy/elm-nlds/actions?query=branch%3Amain)
-
 This is an Elm port of Paul Chiusano's Unison libraries:
 
 - [pchiusano/nlds](https://share.unison-lang.org/@pchiusano/nlds) - Natural Language Disambiguator
@@ -9,7 +7,7 @@ This is an Elm port of Paul Chiusano's Unison libraries:
 
 **Natural language parser for loosely ordered token sequences.**
 
-Parse user input where tokens can appear in any order, with synonyms, and get results ranked by how well they match. Perfect for command palettes, search boxes, and natural language interfaces.
+Parse user input where tokens can appear in any order, with synonyms, and get results ranked by how well they match. Useful for command palettes, search boxes, and natural language interfaces.
 
 ```elm
 import Nld exposing (Nld, word, words, tuple2, runTake)
@@ -139,11 +137,6 @@ topK 3 parser [ "buy", "apple", "now" ]
 ```
 
 The autocomplete explores the parse tree lazily, finding the next tokens needed at each step. Combined with order-independence, users can type `apple buy` and still get `now` as the suggestion.
-
-## Modules
-
-- **`Nld`** - The main parser type and combinators
-- **`Peach`** - Lazy priority search data structure (used internally, but exposed for advanced use)
 
 ## License
 

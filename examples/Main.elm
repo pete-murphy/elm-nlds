@@ -1,13 +1,16 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
+import Browser.Dom as Dom
 import Date exposing (Date)
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Html.Events as Events
+import Json.Decode
 import Json.Encode
 import Nld exposing (Nld)
 import Regex
+import Task
 import Time exposing (Month(..), Weekday(..))
 
 
@@ -97,7 +100,7 @@ minutesParser : Nld Int
 minutesParser =
     let
         anHour =
-            Nld.tuple2 (Nld.words [ "an", "a", "one", "1" ]) (Nld.word "hour")
+            Nld.tuple2 (Nld.words [ "an", "a", "one", "1" ]) hour
 
         hours =
             Nld.words [ "hours", "hour", "hrs", "hr" ]
@@ -107,13 +110,25 @@ minutesParser =
 
         and =
             Nld.words [ "and", "&" ]
+
+        a =
+            Nld.words [ "a", "an" ]
+
+        half =
+            Nld.word "half"
+
+        hour =
+            Nld.words [ "hour", "hr" ]
     in
     Nld.choice
-        [ Nld.map3 (\_ _ _ -> 30) (Nld.words [ "a", "an" ]) (Nld.word "half") (Nld.word "hour")
+        [ Nld.map3 (\_ _ _ -> 30) a half hour
+        , Nld.map4 (\_ _ _ _ -> 90) anHour and a half
+        , Nld.map4 (\_ _ _ _ -> 90) hour and a half
+        , Nld.map5 (\n _ _ _ _ -> n * 60 + 30) numberWordsParser and a half hours
+        , Nld.map5 (\n _ _ _ _ -> n * 60 + 30) Nld.nat and a half hours
         , Nld.map4 (\_ _ mins _ -> 60 + mins) anHour and Nld.nat minutes
         , Nld.map2 (\mins _ -> mins) Nld.nat minutes
         , Nld.map2 (\hrs _ -> hrs * 60) Nld.nat hours
-        , Nld.map4 (\_ _ _ _ -> 90) anHour and (Nld.word "a") (Nld.word "half")
         , Nld.map (\_ -> 60) anHour
         , Nld.map2 (\n _ -> n * 60) numberWordsParser hours
         , Nld.map2 (\n _ -> n) numberWordsParser minutes
@@ -123,23 +138,24 @@ minutesParser =
 whenParser : Time -> Nld When
 whenParser currentTime =
     let
-        whenParserHelp parsedTime =
+        whenParserHelp : Nld (Maybe Time -> When)
+        whenParserHelp =
             Nld.choice
-                [ Nld.map (\_ -> Today parsedTime) (Nld.word "today")
-                , Nld.map3 (\days _ _ -> DaysAgo days parsedTime) Nld.nat (Nld.words [ "days", "day" ]) (Nld.word "ago")
-                , Nld.map3 (\days _ _ -> DaysAgo days parsedTime) numberWordsParser (Nld.word "days") (Nld.word "ago")
-                , Nld.map (\_ -> DaysAgo 1 parsedTime) (Nld.word "yesterday")
-                , Nld.map2 (\_ _ -> DaysAgo 1 parsedTime) (Nld.word "last") (Nld.word "night")
-                , Nld.map2 (\mins _ -> MinutesAgo mins) minutesParser (Nld.word "ago")
-                , Nld.map (\weekday -> OnDay weekday parsedTime) weekdayParser
+                [ Nld.map (\_ -> Today) (Nld.word "today")
+                , Nld.map3 (\days _ _ -> DaysAgo days) Nld.nat (Nld.words [ "days", "day" ]) (Nld.word "ago")
+                , Nld.map3 (\days _ _ -> DaysAgo days) numberWordsParser (Nld.word "days") (Nld.word "ago")
+                , Nld.map (\_ -> DaysAgo 1) (Nld.word "yesterday")
+                , Nld.map2 (\_ _ -> DaysAgo 1) (Nld.word "last") (Nld.word "night")
+                , Nld.map (\weekday -> OnDay weekday) weekdayParser
+                , Nld.succeed Today
                 ]
     in
     Nld.choice
-        [ timeParser currentTime
-            |> Nld.andThen (\parsedTime -> whenParserHelp (Just parsedTime))
-        , timeParser currentTime
-            |> Nld.map (\parsedTime -> Today (Just parsedTime))
-        , whenParserHelp Nothing
+        [ Nld.map2 (\mins _ -> MinutesAgo mins) minutesParser (Nld.word "ago")
+        , whenParserHelp
+            |> Nld.andMap (timeParser currentTime |> Nld.map Just)
+        , whenParserHelp
+            |> Nld.andMap (Nld.succeed Nothing)
         ]
 
 
@@ -171,7 +187,7 @@ weekdayParser =
     Nld.choice
         [ Nld.map (\_ -> Mon) (Nld.words [ "monday", "mon" ])
         , Nld.map (\_ -> Tue) (Nld.words [ "tuesday", "tue", "tues" ])
-        , Nld.map (\_ -> Wed) (Nld.words [ "wednesday", "wed" ])
+        , Nld.map (\_ -> Wed) (Nld.words [ "wednesday", "wed", "weds" ])
         , Nld.map (\_ -> Thu) (Nld.words [ "thursday", "thu", "thurs" ])
         , Nld.map (\_ -> Fri) (Nld.words [ "friday", "fri" ])
         , Nld.map (\_ -> Sat) (Nld.words [ "saturday", "sat" ])
@@ -181,10 +197,21 @@ weekdayParser =
 
 activityEntryParser : Time -> Nld ActivityEntry
 activityEntryParser currentTime =
+    let
+        whenP =
+            Nld.map Just (whenParser currentTime)
+
+        minutesP =
+            Nld.map Just minutesParser
+    in
     Nld.choice
-        [ Nld.map3 ActivityEntry activityParser (Nld.map Just (whenParser currentTime)) (Nld.map Just minutesParser)
-        , Nld.map3 ActivityEntry activityParser (Nld.map Just (whenParser currentTime)) (Nld.succeed Nothing)
-        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) (Nld.map Just minutesParser)
+        [ -- when before minutes (natural for "swam yesterday for 30 min")
+          Nld.map3 ActivityEntry activityParser whenP minutesP
+
+        -- minutes before when (natural for "swam for an hour on Thursday")
+        , Nld.map3 (\act mins whn -> ActivityEntry act whn mins) activityParser minutesP whenP
+        , Nld.map3 ActivityEntry activityParser whenP (Nld.succeed Nothing)
+        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) minutesP
         , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) (Nld.succeed Nothing)
         ]
 
@@ -200,27 +227,34 @@ tokenize input =
         |> String.toLower
         |> Regex.replace timeRegex (.match >> String.words >> String.join "")
         |> String.words
+        |> List.map (String.filter Char.isAlphaNum)
 
 
-parseActivity : Time -> String -> List ActivityEntry
-parseActivity currentTime input =
+parseActivity : DateTime -> String -> List ActivityEntry
+parseActivity now input =
     let
         tokens =
             tokenize input
     in
-    Nld.runTake 20 (activityEntryParser currentTime) tokens
-        |> List.sortBy scoreEntry
+    Nld.runTake 20 (activityEntryParser now.time) tokens
         |> Debug.log "parsed"
-        |> List.map (Debug.log "entry")
+        |> List.sortBy scoreEntry
+        |> List.map (Debug.log "sorted")
 
 
+{-| Penalize less specific matches.
+-}
 scoreEntry : ActivityEntry -> Int
 scoreEntry entry =
     let
         minutesScore =
             case entry.minutes of
-                Just _ ->
-                    0
+                Just n ->
+                    if n == 60 then
+                        1
+
+                    else
+                        0
 
                 Nothing ->
                     2
@@ -259,10 +293,36 @@ scoreEntry entry =
 
 
 type alias Flags =
+    JsDateTime
+
+
+type alias JsDateTime =
     { year : Int
     , dayOfYear : Int
     , hour : Int
     , minute : Int
+    }
+
+
+jsDateTimeToDateTime : JsDateTime -> DateTime
+jsDateTimeToDateTime jsDateTime =
+    let
+        date =
+            Date.fromOrdinalDate jsDateTime.year jsDateTime.dayOfYear
+
+        time =
+            { hour = modBy 12 (jsDateTime.hour + 11) + 1
+            , minute = jsDateTime.minute
+            , meridiem =
+                if jsDateTime.hour < 12 then
+                    Am
+
+                else
+                    Pm
+            }
+    in
+    { date = date
+    , time = time
     }
 
 
@@ -273,31 +333,16 @@ type alias Model =
 
 
 type Msg
-    = InputChanged String
+    = UserChangedInput String
+    | UserSubmittedForm String
+    | ElmAttemptedToFocusOutput (Result Dom.Error ())
+    | JsSentDateTime JsDateTime
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    let
-        currentDate =
-            Date.fromOrdinalDate flags.year flags.dayOfYear
-
-        currentTime =
-            { hour = modBy 12 (flags.hour + 11) + 1
-            , minute = flags.minute
-            , meridiem =
-                if flags.hour < 12 then
-                    Am
-
-                else
-                    Pm
-            }
-    in
     ( { input = ""
-      , now =
-            { date = currentDate
-            , time = currentTime
-            }
+      , now = jsDateTimeToDateTime flags
       }
     , Cmd.none
     )
@@ -306,9 +351,36 @@ init flags =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        InputChanged newInput ->
+        UserChangedInput newInput ->
             ( { model
                 | input = newInput
+              }
+            , elmRequestedDateTime ()
+            )
+
+        UserSubmittedForm input ->
+            ( { model
+                | input = input
+              }
+            , Cmd.batch
+                [ Dom.focus "activity-output"
+                    |> Task.attempt ElmAttemptedToFocusOutput
+                , elmRequestedDateTime ()
+                ]
+            )
+
+        ElmAttemptedToFocusOutput result ->
+            let
+                _ =
+                    Debug.log "attempted to focus output" result
+            in
+            ( model
+            , Cmd.none
+            )
+
+        JsSentDateTime currentTime ->
+            ( { model
+                | now = jsDateTimeToDateTime currentTime
               }
             , Cmd.none
             )
@@ -319,56 +391,81 @@ view model =
     Html.main_ []
         [ Html.header []
             [ Html.h1 [] [ Html.text "Activity Parser" ]
-            , Html.p [] [ Html.text "Natural language activity entry, powered by elm-nlds." ]
+            , Html.p [] [ Html.text "Natural language activity entry" ]
             ]
-        , Html.section [ Attr.attribute "aria-labelledby" "input-heading" ]
-            [ Html.h2 [ Attr.id "input-heading" ] [ Html.text "Try it" ]
-            , Html.div []
+        , Html.section []
+            [ Html.h2 [] [ Html.text "Try it" ]
+            , Html.form
+                [ Events.preventDefaultOn "submit"
+                    (Json.Decode.at [ "target", "elements", "0", "value" ] Json.Decode.string
+                        |> Json.Decode.map (\res -> ( UserSubmittedForm res, True ))
+                    )
+                ]
                 [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
-                , Html.input
+                , Html.textarea
                     [ Attr.id "activity-input"
-                    , Attr.type_ "text"
                     , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
                     , Attr.value model.input
-                    , Attr.attribute "autocomplete" "off"
-                    , Events.onInput InputChanged
+                    , Attr.spellcheck False
                     ]
                     []
+                , Html.button []
+                    [ Html.text "Parse" ]
                 ]
-            , Html.div []
-                [ Html.label [ Attr.for "best-output" ] [ Html.text "Best match" ]
-                , Html.node "output"
-                    [ Attr.id "best-output"
-                    , Attr.attribute "for" "activity-input"
-                    , Attr.attribute "aria-live" "polite"
-                    ]
-                    [ viewBestMatch model.now model.input ]
+            , case parseActivity model.now model.input of
+                [] ->
+                    Html.text ""
+
+                parsed :: _ ->
+                    let
+                        when =
+                            parsed.when |> Maybe.withDefault (Today Nothing)
+
+                        resolved =
+                            resolveDateTime model.now when
+                    in
+                    Html.output
+                        [ Attr.attribute "for" "activity-input"
+                        , Attr.id "activity-output"
+                        , Attr.tabindex -1
+                        ]
+                        [ viewActivity parsed.activity
+                        , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
+                        , viewDateTime resolved
+                        ]
+            , Html.section []
+                [ Html.h2 [] [ Html.text "Examples" ]
+                , Html.ul []
+                    ([ "ran for 45 minutes yesterday morning"
+                     , "just went for a jog"
+                     , "swam for an hour on Thursday"
+                     , "bike ride, tues 3:30pm"
+                     , "yoga 3 pm"
+                     , "yesterday at 1 am I went swimming for 30 minutes"
+                     ]
+                        |> List.map
+                            (\example ->
+                                Html.li []
+                                    [ Html.button
+                                        [ Events.onClick (UserChangedInput example) ]
+                                        [ Html.text example ]
+                                    ]
+                            )
+                    )
                 ]
-            ]
-        , Html.section [ Attr.attribute "aria-labelledby" "examples-heading" ]
-            [ Html.h2 [ Attr.id "examples-heading" ] [ Html.text "Examples" ]
-            , Html.dl []
-                (examples
-                    |> List.map
-                        (\example ->
-                            Html.div []
-                                [ Html.dt [] [ Html.text example ]
-                                , Html.dd [] [ viewBestMatch model.now example ]
-                                ]
-                        )
-                )
             ]
         ]
 
 
-examples : List String
-examples =
-    [ "ran for 45 minutes yesterday morning"
-    , "just went for a jog"
-    , "swam for an hour on Thursday"
-    , "bike ride, tues 3:30pm"
-    , "yoga 3 pm"
-    ]
+port jsSentDateTime : (JsDateTime -> msg) -> Sub msg
+
+
+port elmRequestedDateTime : () -> Cmd msg
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    jsSentDateTime JsSentDateTime
 
 
 main : Program Flags Model Msg
@@ -377,7 +474,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -433,42 +530,22 @@ formatTime time =
 
 viewActivity : Activity -> Html msg
 viewActivity activity =
-    case activity of
-        Cycling ->
-            Html.text "🚴 Cycling"
+    let
+        text =
+            case activity of
+                Cycling ->
+                    "🚴 Cycling"
 
-        Swimming ->
-            Html.text "🏊 Swimming"
+                Swimming ->
+                    "🏊 Swimming"
 
-        Running ->
-            Html.text "🏃 Running"
+                Running ->
+                    "🏃 Running"
 
-        Yoga ->
-            Html.text "🧘 Yoga"
-
-
-viewBestMatch :
-    DateTime
-    -> String
-    -> Html msg
-viewBestMatch currentDateTime input =
-    case parseActivity currentDateTime.time input of
-        [] ->
-            Html.text "No match yet"
-
-        parsed :: _ ->
-            let
-                when =
-                    parsed.when |> Maybe.withDefault (Today Nothing)
-
-                resolved =
-                    resolveDateTime currentDateTime when
-            in
-            Html.div []
-                [ viewActivity parsed.activity
-                , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
-                , viewDateTime resolved
-                ]
+                Yoga ->
+                    "🧘 Yoga"
+    in
+    Html.div [] [ Html.text text ]
 
 
 

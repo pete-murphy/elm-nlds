@@ -18,7 +18,7 @@ module Nld exposing
   - Lazily producing results in priority order
 
 Unlike traditional parser combinators, `Nld` is robust to reordering and
-alternate phrasings, making it ideal for parsing natural language input.
+alternate phrasings, making it useful for parsing natural language input.
 
 
 # Running Parsers
@@ -592,49 +592,65 @@ map f nld =
 -}
 map2 : (a -> b -> c) -> Nld a -> Nld b -> Nld c
 map2 f nldA nldB =
-    andThen (\a -> map (\b -> f a b) nldB) nldA
+    case nldA of
+        Done a remA lastPosA ->
+            case nldB of
+                Done b remB lastPosB ->
+                    Done (f a b) remB (max lastPosA lastPosB)
+
+                More wantedB k ->
+                    More wantedB
+                        (\_ _ ->
+                            Peach.map (\nldB2 -> map2 f (Done a remA lastPosA) nldB2) (k remA lastPosA)
+                        )
+
+        More wantedA k ->
+            More wantedA
+                (\remaining lastPos ->
+                    Peach.map (\nldA2 -> map2 f nldA2 nldB) (k remaining lastPos)
+                )
 
 
 {-| Combine three parsers.
 -}
 map3 : (a -> b -> c -> d) -> Nld a -> Nld b -> Nld c -> Nld d
 map3 f nldA nldB nldC =
-    andThen (\a -> map2 (\b c -> f a b c) nldB nldC) nldA
+    succeed f |> andMap nldA |> andMap nldB |> andMap nldC
 
 
 {-| Combine four parsers.
 -}
 map4 : (a -> b -> c -> d -> e) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e
 map4 f nldA nldB nldC nldD =
-    andThen (\a -> map3 (\b c d -> f a b c d) nldB nldC nldD) nldA
+    succeed f |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD
 
 
 {-| Combine five parsers.
 -}
 map5 : (a -> b -> c -> d -> e -> f) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f
 map5 fn nldA nldB nldC nldD nldE =
-    andThen (\a -> map4 (\b c d e -> fn a b c d e) nldB nldC nldD nldE) nldA
+    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE
 
 
 {-| Combine six parsers.
 -}
 map6 : (a -> b -> c -> d -> e -> f -> g) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g
 map6 fn nldA nldB nldC nldD nldE nldF =
-    andThen (\a -> map5 (\b c d e f -> fn a b c d e f) nldB nldC nldD nldE nldF) nldA
+    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF
 
 
 {-| Combine seven parsers.
 -}
 map7 : (a -> b -> c -> d -> e -> f -> g -> h) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h
 map7 fn nldA nldB nldC nldD nldE nldF nldG =
-    andThen (\a -> map6 (\b c d e f g -> fn a b c d e f g) nldB nldC nldD nldE nldF nldG) nldA
+    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF |> andMap nldG
 
 
 {-| Combine eight parsers.
 -}
 map8 : (a -> b -> c -> d -> e -> f -> g -> h -> i) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h -> Nld i
 map8 fn nldA nldB nldC nldD nldE nldF nldG nldH =
-    andThen (\a -> map7 (\b c d e f g h -> fn a b c d e f g h) nldB nldC nldD nldE nldF nldG nldH) nldA
+    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF |> andMap nldG |> andMap nldH
 
 
 {-| Combine two parsers into a tuple.
@@ -706,26 +722,36 @@ andMap nldA nldFn =
 
 
 {-| Try multiple parsers and return all successful parses.
-
-    runList (choice [ word "delete", word "add" ]) [ "delete" ]
-    --> [ "delete" ]
-
 -}
 choice : List (Nld a) -> Nld a
 choice parsers =
-    let
-        allWanted =
-            parsers
-                |> List.map getWanted
-                |> List.foldl Set.union Set.empty
+    case parsers of
+        [] ->
+            More Set.empty (\_ _ -> Peach.fail)
 
-        k tp lastPos =
-            parsers
-                |> List.map (\nld -> runHelper nld tp lastPos)
-                |> Peach.choose
-                |> Peach.map (\a -> Done a tp lastPos)
-    in
-    More allWanted k
+        [ single ] ->
+            single
+
+        _ ->
+            let
+                allWanted =
+                    parsers
+                        |> List.map getWanted
+                        |> List.foldl Set.union Set.empty
+
+                k tp lastPos =
+                    Peach.peach (List.map (\n -> ( 0.0, n )) parsers)
+                        |> Peach.flatMap
+                            (\nld ->
+                                case nld of
+                                    Done a rem lp ->
+                                        Peach.peach [ ( 0.0, Done a rem lp ) ]
+
+                                    More _ k2 ->
+                                        k2 tp lastPos
+                            )
+            in
+            More allWanted k
 
 
 {-| Match zero or more occurrences of a parser.

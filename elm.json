@@ -3,7 +3,7 @@
     "name": "pete-murphy/elm-nlds",
     "summary": "Natural language parser for loosely ordered token sequences",
     "license": "MIT",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "exposed-modules": [
         "Nld",
         "Peach"
@@ -11,7 +11,8 @@
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {
         "TSFoster/elm-heap": "2.1.2 <= v < 3.0.0",
-        "elm/core": "1.0.2 <= v < 2.0.0"
+        "elm/core": "1.0.2 <= v < 2.0.0",
+        "elm/json": "1.1.4 <= v < 2.0.0"
     },
     "test-dependencies": {
         "elm-explorations/test": "2.2.0 <= v < 3.0.0"

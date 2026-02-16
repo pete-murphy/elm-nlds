@@ -809,4 +809,50 @@ suite =
                         |> Maybe.map Tuple.second
                         |> Expect.equal (Just "hello")
             ]
+
+        -- ============================================
+        -- Token consumption (regression tests)
+        -- ============================================
+        , describe "token consumption (regression tests)"
+            [ test "map2 does not reuse tokens - numeric edition" <|
+                \() ->
+                    let
+                        daysAgo =
+                            map2 (\n _ -> n) nat (word "days")
+
+                        combined =
+                            map2 Tuple.pair daysAgo nat
+
+                        results =
+                            runList combined [ "2", "days", "5" ]
+                    in
+                    Expect.all
+                        [ \r -> List.member ( 2, 5 ) r |> Expect.equal True
+                        , \r -> List.member ( 2, 2 ) r |> Expect.equal False
+                        ]
+                        results
+            , test "choice does not restore consumed tokens" <|
+                \() ->
+                    let
+                        parser =
+                            map2 Tuple.pair (choice [ word "a", word "b" ]) nat
+                    in
+                    runList parser [ "a", "3" ]
+                        |> Expect.equal [ ( "a", 3 ) ]
+            , test "complex: activity parser token consumption" <|
+                \() ->
+                    let
+                        whenParser =
+                            map2 (\n _ -> n) nat (words [ "days", "day" ])
+
+                        minutesParser =
+                            nat
+
+                        combined =
+                            map2 Tuple.pair whenParser minutesParser
+                    in
+                    runList combined [ "2", "days", "ago", "45", "minutes" ]
+                        |> List.member ( 2, 2 )
+                        |> Expect.equal False
+            ]
         ]
