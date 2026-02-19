@@ -26,7 +26,7 @@ runTake 1 deleteCommand [ "please", "remove", "the", "file" ]
 --> [ ( "delete", "file" ) ]  -- ignores irrelevant tokens, canonicalizes synonyms
 ```
 
-Ellie example of a more involved exercise logging parser: https://ellie-app.com/xY47CFv82Kja1
+Ellie example of a more involved exercise logging parser: https://ellie-app.com/xZ3FSwT9NGxa1
 
 ## Design Goals
 
