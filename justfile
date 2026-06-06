@@ -17,3 +17,6 @@ publish:
     git push origin "$version"
     elm publish
 
+test:
+    npx elm-verify-examples
+    elm-test-rs

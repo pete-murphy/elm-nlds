@@ -6,7 +6,9 @@
     "version": "2.1.0",
     "exposed-modules": [
         "Nld",
-        "Peach"
+        "Peach",
+        "Nld.Grammar",
+        "Nld.TokenType"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {
@@ -15,6 +17,7 @@
         "elm/json": "1.1.4 <= v < 2.0.0"
     },
     "test-dependencies": {
-        "elm-explorations/test": "2.2.0 <= v < 3.0.0"
+        "elm-explorations/test": "2.2.0 <= v < 3.0.0",
+        "elm/time": "1.0.0 <= v < 2.0.0"
     }
 }

@@ -10,6 +10,8 @@ import Json.Decode
 import Json.Encode
 import Nld exposing (Nld)
 import Regex
+import Svg
+import Svg.Attributes
 import Task
 import Time exposing (Month(..), Weekday(..))
 
@@ -26,10 +28,7 @@ type alias ActivityEntry =
 
 
 type Activity
-    = Cycling
-    | Running
-    | Swimming
-    | Yoga
+    = Activity String
 
 
 type When
@@ -63,10 +62,10 @@ type alias DateTime =
 
 activitySynonyms : List ( Activity, List String )
 activitySynonyms =
-    [ ( Cycling, [ "bike", "biking", "biked", "cycle", "cycling", "cycled", "rode", "riding" ] )
-    , ( Running, [ "run", "running", "ran", "jog", "jogging", "jogged" ] )
-    , ( Swimming, [ "swim", "swimming", "swam", "laps" ] )
-    , ( Yoga, [ "yoga" ] )
+    [ ( Activity "🚴 Cycling", [ "bike", "biking", "biked", "cycle", "cycling", "cycled", "rode", "riding" ] )
+    , ( Activity "🏃 Running", [ "run", "running", "ran", "jog", "jogging", "jogged" ] )
+    , ( Activity "🏊 Swimming", [ "swim", "swimming", "swam", "laps" ] )
+    , ( Activity "🧘 Yoga", [ "yoga" ] )
     ]
 
 
@@ -74,12 +73,12 @@ activitySynonyms =
 -- PARSERS
 
 
-activityParser : Nld Activity
-activityParser =
+activityParser : List ( Activity, List String ) -> Nld Activity
+activityParser activities =
     Nld.choice
         (List.map
             (\( activity, syns ) -> Nld.map (\_ -> activity) (Nld.words syns))
-            activitySynonyms
+            activities
         )
 
 
@@ -195,9 +194,12 @@ weekdayParser =
         ]
 
 
-activityEntryParser : Time -> Nld ActivityEntry
-activityEntryParser currentTime =
+activityEntryParser : List ( Activity, List String ) -> Time -> Nld ActivityEntry
+activityEntryParser activities currentTime =
     let
+        activityP =
+            activityParser activities
+
         whenP =
             Nld.map Just (whenParser currentTime)
 
@@ -206,13 +208,13 @@ activityEntryParser currentTime =
     in
     Nld.choice
         [ -- when before minutes (natural for "swam yesterday for 30 min")
-          Nld.map3 ActivityEntry activityParser whenP minutesP
+          Nld.map3 ActivityEntry activityP whenP minutesP
 
         -- minutes before when (natural for "swam for an hour on Thursday")
-        , Nld.map3 (\act mins whn -> ActivityEntry act whn mins) activityParser minutesP whenP
-        , Nld.map3 ActivityEntry activityParser whenP (Nld.succeed Nothing)
-        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) minutesP
-        , Nld.map3 ActivityEntry activityParser (Nld.succeed Nothing) (Nld.succeed Nothing)
+        , Nld.map3 (\act mins whn -> ActivityEntry act whn mins) activityP minutesP whenP
+        , Nld.map3 ActivityEntry activityP whenP (Nld.succeed Nothing)
+        , Nld.map3 ActivityEntry activityP (Nld.succeed Nothing) minutesP
+        , Nld.map3 ActivityEntry activityP (Nld.succeed Nothing) (Nld.succeed Nothing)
         ]
 
 
@@ -227,37 +229,38 @@ tokenize input =
         |> String.toLower
         |> Regex.replace timeRegex (.match >> String.words >> String.join "")
         |> String.words
-        |> List.map (String.filter Char.isAlphaNum)
+        |> List.map (String.filter (\c -> Char.isAlphaNum c || c == ':'))
 
 
-parseActivity : DateTime -> String -> List ActivityEntry
-parseActivity now input =
+parseActivity : List ( Activity, List String ) -> DateTime -> String -> List ActivityEntry
+parseActivity activities now input =
     let
         tokens =
             tokenize input
     in
-    Nld.runTake 20 (activityEntryParser now.time) tokens
-        |> Debug.log "parsed"
+    Nld.runTake 20 (activityEntryParser activities now.time) tokens
         |> List.sortBy scoreEntry
-        |> List.map (Debug.log "sorted")
 
 
 {-| Penalize less specific matches.
 -}
-scoreEntry : ActivityEntry -> Int
+scoreEntry : ActivityEntry -> ( Int, Int )
 scoreEntry entry =
     let
         minutesScore =
             case entry.minutes of
                 Just n ->
-                    if n == 60 then
+                    if n > 240 then
+                        2
+
+                    else if n == 60 then
                         1
 
                     else
                         0
 
                 Nothing ->
-                    2
+                    1
 
         whenScore =
             case entry.when of
@@ -285,7 +288,9 @@ scoreEntry entry =
                 Nothing ->
                     3
     in
-    minutesScore + whenScore
+    ( minutesScore + whenScore
+    , -(Maybe.withDefault 0 (Maybe.map (min 240) entry.minutes))
+    )
 
 
 
@@ -329,6 +334,17 @@ jsDateTimeToDateTime jsDateTime =
 type alias Model =
     { input : String
     , now : DateTime
+    , activities : List ( Activity, List String )
+    , editingActivity : Maybe EditingActivity
+    , addActivityName : String
+    , addActivitySynonyms : String
+    }
+
+
+type alias EditingActivity =
+    { index : Int
+    , name : String
+    , synonyms : String
     }
 
 
@@ -337,12 +353,25 @@ type Msg
     | UserSubmittedForm String
     | ElmAttemptedToFocusOutput (Result Dom.Error ())
     | JsSentDateTime JsDateTime
+    | UserClickedEditActivity Int
+    | UserChangedEditActivityName String
+    | UserChangedEditActivitySynonyms String
+    | UserSavedEditActivity
+    | UserCancelledEditActivity
+    | UserClickedDeleteActivity Int
+    | UserChangedAddActivityName String
+    | UserChangedAddActivitySynonyms String
+    | UserSubmittedAddActivity
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { input = ""
       , now = jsDateTimeToDateTime flags
+      , activities = activitySynonyms
+      , editingActivity = Nothing
+      , addActivityName = ""
+      , addActivitySynonyms = ""
       }
     , Cmd.none
     )
@@ -385,54 +414,152 @@ update msg model =
             , Cmd.none
             )
 
+        UserClickedEditActivity index ->
+            case listGetAt index model.activities of
+                Just ( Activity name, syns ) ->
+                    ( { model
+                        | editingActivity =
+                            Just
+                                { index = index
+                                , name = name
+                                , synonyms = String.join ", " syns
+                                }
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        UserChangedEditActivityName name ->
+            ( { model
+                | editingActivity =
+                    Maybe.map (\e -> { e | name = name }) model.editingActivity
+              }
+            , Cmd.none
+            )
+
+        UserChangedEditActivitySynonyms synonyms ->
+            ( { model
+                | editingActivity =
+                    Maybe.map (\e -> { e | synonyms = synonyms }) model.editingActivity
+              }
+            , Cmd.none
+            )
+
+        UserSavedEditActivity ->
+            case model.editingActivity of
+                Just editing ->
+                    let
+                        newEntry =
+                            ( Activity editing.name
+                            , parseSynonymsString editing.synonyms
+                            )
+                    in
+                    ( { model
+                        | activities = listSetAt editing.index newEntry model.activities
+                        , editingActivity = Nothing
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        UserCancelledEditActivity ->
+            ( { model | editingActivity = Nothing }
+            , Cmd.none
+            )
+
+        UserClickedDeleteActivity index ->
+            ( { model
+                | activities = listRemoveAt index model.activities
+                , editingActivity = Nothing
+              }
+            , Cmd.none
+            )
+
+        UserChangedAddActivityName name ->
+            ( { model | addActivityName = name }
+            , Cmd.none
+            )
+
+        UserChangedAddActivitySynonyms synonyms ->
+            ( { model | addActivitySynonyms = synonyms }
+            , Cmd.none
+            )
+
+        UserSubmittedAddActivity ->
+            if String.isEmpty (String.trim model.addActivityName) then
+                ( model, Cmd.none )
+
+            else
+                let
+                    newEntry =
+                        ( Activity (String.trim model.addActivityName)
+                        , parseSynonymsString model.addActivitySynonyms
+                        )
+                in
+                ( { model
+                    | activities = model.activities ++ [ newEntry ]
+                    , addActivityName = ""
+                    , addActivitySynonyms = ""
+                  }
+                , Cmd.none
+                )
+
 
 view : Model -> Html Msg
 view model =
-    Html.main_ []
+    Html.div []
         [ Html.header []
             [ Html.h1 [] [ Html.text "Activity Parser" ]
             , Html.p [] [ Html.text "Natural language activity entry" ]
             ]
-        , Html.section []
-            [ Html.h2 [] [ Html.text "Try it" ]
-            , Html.form
-                [ Events.preventDefaultOn "submit"
-                    (Json.Decode.at [ "target", "elements", "0", "value" ] Json.Decode.string
-                        |> Json.Decode.map (\res -> ( UserSubmittedForm res, True ))
-                    )
-                ]
-                [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
-                , Html.textarea
-                    [ Attr.id "activity-input"
-                    , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
-                    , Attr.value model.input
-                    , Attr.spellcheck False
+        , Html.main_ []
+            [ Html.section []
+                [ Html.h2 [] [ Html.text "Try it" ]
+                , Html.form
+                    [ Events.preventDefaultOn "submit"
+                        (Json.Decode.at [ "target", "elements", "0", "value" ] Json.Decode.string
+                            |> Json.Decode.map (\res -> ( UserSubmittedForm res, True ))
+                        )
                     ]
-                    []
-                , Html.button []
-                    [ Html.text "Parse" ]
+                    [ Html.label [ Attr.for "activity-input" ] [ Html.text "Activity" ]
+                    , Html.textarea
+                        [ Attr.id "activity-input"
+                        , Attr.placeholder "e.g., ran for 30 minutes yesterday morning"
+                        , Attr.value model.input
+                        , Attr.spellcheck False
+                        ]
+                        []
+                    , Html.button []
+                        [ Html.text "Parse" ]
+                    ]
+                , case parseActivity model.activities model.now model.input of
+                    [] ->
+                        Html.text ""
+
+                    parsed :: _ ->
+                        let
+                            when =
+                                parsed.when |> Maybe.withDefault (Today Nothing)
+
+                            resolved =
+                                resolveDateTime model.now when
+                        in
+                        Html.output
+                            [ Attr.attribute "for" "activity-input"
+                            , Attr.id "activity-output"
+                            , Attr.tabindex -1
+                            ]
+                            [ case parsed.activity of
+                                Activity text ->
+                                    Html.div [] [ Html.text text ]
+                            , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
+                            , viewDateTime resolved
+                            ]
                 ]
-            , case parseActivity model.now model.input of
-                [] ->
-                    Html.text ""
-
-                parsed :: _ ->
-                    let
-                        when =
-                            parsed.when |> Maybe.withDefault (Today Nothing)
-
-                        resolved =
-                            resolveDateTime model.now when
-                    in
-                    Html.output
-                        [ Attr.attribute "for" "activity-input"
-                        , Attr.id "activity-output"
-                        , Attr.tabindex -1
-                        ]
-                        [ viewActivity parsed.activity
-                        , viewMinutes (parsed.minutes |> Maybe.withDefault 30)
-                        , viewDateTime resolved
-                        ]
             , Html.section []
                 [ Html.h2 [] [ Html.text "Examples" ]
                 , Html.ul []
@@ -452,6 +579,11 @@ view model =
                                     ]
                             )
                     )
+                ]
+            , Html.section []
+                [ Html.h2 [] [ Html.text "Activities" ]
+                , viewActivities model
+                , viewAddActivityForm model
                 ]
             ]
         ]
@@ -513,6 +645,113 @@ viewDateTime dateTime =
         ]
 
 
+viewActivities : Model -> Html Msg
+viewActivities model =
+    Html.dl []
+        (List.indexedMap
+            (\index ( activity, synonyms ) ->
+                case model.editingActivity of
+                    Just editing ->
+                        if editing.index == index then
+                            viewEditActivityForm editing
+
+                        else
+                            viewActivityItem index activity synonyms
+
+                    Nothing ->
+                        viewActivityItem index activity synonyms
+            )
+            model.activities
+        )
+
+
+viewActivityItem : Int -> Activity -> List String -> Html Msg
+viewActivityItem index (Activity name) synonyms =
+    Html.div []
+        [ Html.dt []
+            [ Html.span [] [ Html.text name ]
+            , Html.button [ Events.onClick (UserClickedEditActivity index) ]
+                [ Svg.svg [ Svg.Attributes.viewBox "0 0 16 16" ]
+                    [ Svg.use [ Attr.attribute "href" "#edit-icon" ] [] ]
+                , Html.text "Edit"
+                ]
+            , Html.button [ Events.onClick (UserClickedDeleteActivity index), Attr.class "destructive" ]
+                [ Svg.svg [ Svg.Attributes.viewBox "0 0 16 16" ]
+                    [ Svg.use [ Attr.attribute "href" "#delete-icon" ] [] ]
+                , Html.text "Delete"
+                ]
+            ]
+        , Html.dd [] [ Html.text (String.join ", " synonyms) ]
+        ]
+
+
+viewEditActivityForm : EditingActivity -> Html Msg
+viewEditActivityForm editing =
+    Html.div []
+        [ Html.dt []
+            [ Html.input
+                [ Attr.value editing.name
+                , Events.onInput UserChangedEditActivityName
+                ]
+                []
+            ]
+        , Html.dd []
+            [ Html.input
+                [ Attr.value editing.synonyms
+                , Events.onInput UserChangedEditActivitySynonyms
+                , Attr.placeholder "comma-separated synonyms"
+                ]
+                []
+            , Html.div []
+                [ Html.button [ Events.onClick UserSavedEditActivity ]
+                    [ Svg.svg [ Svg.Attributes.viewBox "0 0 16 16" ]
+                        [ Svg.use [ Attr.attribute "href" "#check-icon" ] [] ]
+                    , Html.text "Save"
+                    ]
+                , Html.button [ Events.onClick UserCancelledEditActivity ]
+                    [ Svg.svg [ Svg.Attributes.viewBox "0 0 16 16" ]
+                        [ Svg.use [ Attr.attribute "href" "#x-icon" ] [] ]
+                    , Html.text "Cancel"
+                    ]
+                ]
+            ]
+        ]
+
+
+viewAddActivityForm : Model -> Html Msg
+viewAddActivityForm model =
+    Html.form
+        [ Events.preventDefaultOn "submit"
+            (Json.Decode.succeed ( UserSubmittedAddActivity, True ))
+        ]
+        [ Html.div []
+            [ Html.label [ Attr.for "add-activity-name" ] [ Html.text "Activity name" ]
+            , Html.input
+                [ Attr.id "add-activity-name"
+                , Attr.value model.addActivityName
+                , Attr.placeholder "e.g., 🏋️ Weightlifting"
+                , Events.onInput UserChangedAddActivityName
+                ]
+                []
+            ]
+        , Html.div []
+            [ Html.label [ Attr.for "add-activity-synonyms" ] [ Html.text "Synonyms" ]
+            , Html.input
+                [ Attr.id "add-activity-synonyms"
+                , Attr.value model.addActivitySynonyms
+                , Attr.placeholder "e.g., weights, lifting, lifted"
+                , Events.onInput UserChangedAddActivitySynonyms
+                ]
+                []
+            ]
+        , Html.button []
+            [ Svg.svg [ Svg.Attributes.viewBox "0 0 16 16" ]
+                [ Svg.use [ Attr.attribute "href" "#plus-icon" ] [] ]
+            , Html.text "Add activity"
+            ]
+        ]
+
+
 formatTime : Time -> String
 formatTime time =
     String.fromInt time.hour
@@ -526,26 +765,6 @@ formatTime time =
                 Pm ->
                     "PM"
            )
-
-
-viewActivity : Activity -> Html msg
-viewActivity activity =
-    let
-        text =
-            case activity of
-                Cycling ->
-                    "🚴 Cycling"
-
-                Swimming ->
-                    "🏊 Swimming"
-
-                Running ->
-                    "🏃 Running"
-
-                Yoga ->
-                    "🧘 Yoga"
-    in
-    Html.div [] [ Html.text text ]
 
 
 
@@ -710,3 +929,46 @@ clockTimeFromString currentTime tok =
 
         _ ->
             Nothing
+
+
+
+-- LIST HELPERS
+
+
+listGetAt : Int -> List a -> Maybe a
+listGetAt index list =
+    list |> List.drop index |> List.head
+
+
+listSetAt : Int -> a -> List a -> List a
+listSetAt index value list =
+    List.indexedMap
+        (\i item ->
+            if i == index then
+                value
+
+            else
+                item
+        )
+        list
+
+
+listRemoveAt : Int -> List a -> List a
+listRemoveAt index list =
+    List.indexedMap Tuple.pair list
+        |> List.filterMap
+            (\( i, item ) ->
+                if i == index then
+                    Nothing
+
+                else
+                    Just item
+            )
+
+
+parseSynonymsString : String -> List String
+parseSynonymsString str =
+    str
+        |> String.split ","
+        |> List.map String.trim
+        |> List.filter (not << String.isEmpty)

@@ -451,8 +451,8 @@ suite =
                     in
                     Expect.all
                         [ \() -> runList synonyms [ "buy" ] |> Expect.equal [ "buy" ]
-                        , \() -> runList synonyms [ "purchase" ] |> Expect.equal [ "buy" ]
-                        , \() -> runList synonyms [ "get" ] |> Expect.equal [ "buy" ]
+                        , \() -> runList synonyms [ "purchase" ] |> Expect.equal [ "purchase" ]
+                        , \() -> runList synonyms [ "get" ] |> Expect.equal [ "get" ]
                         , \() -> runList synonyms [ "sell" ] |> Expect.equal []
                         , \() -> runTake 1 synonyms [ "buy", "get" ] |> Expect.equal [ "buy" ]
                         ]

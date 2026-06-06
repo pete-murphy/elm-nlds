@@ -1,7 +1,3 @@
 {
-  "tests": [
-    "Nld",
-    "Peach",
-    "./README.md"
-  ]
+  "tests": "exposed"
 }

@@ -1,12 +1,14 @@
 module Nld exposing
     ( Nld
     , run, runList, runTake
-    , word, words, token, nat, int, tokenMatching, tokenFilterMap, minimalToken
-    , indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedTokenMatching, indexedTokenFilterMap
+    , word, words, token, nat, int, float, boolean, tokenMatching, minimalToken
+    , indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedFloat, indexedBoolean, indexedTokenMatching, indexedTokenOfType, indexedMinimalToken
     , succeed, map, map2, map3, map4, map5, map6, map7, map8, andThen, andMap
     , tuple2, tuple3
-    , choice, repeat
+    , choice, repeat, combine, phrase
     , autocomplete, topK
+    , grammar, wanted
+    , tokenize
     )
 
 {-| Natural Language Disambiguator - a flexible parser for loosely ordered token sequences.
@@ -29,14 +31,14 @@ alternate phrasings, making it useful for parsing natural language input.
 
 # Token Matchers
 
-@docs word, words, token, nat, int, tokenMatching, tokenFilterMap, minimalToken
+@docs word, words, token, nat, int, float, boolean, tokenMatching, minimalToken
 
 
 # Indexed Token Matchers
 
 These return both the matched value and its position in the input.
 
-@docs indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedTokenMatching, indexedTokenFilterMap
+@docs indexedWord, indexedWords, indexedToken, indexedNat, indexedInt, indexedFloat, indexedBoolean, indexedTokenMatching, indexedTokenOfType, indexedMinimalToken
 
 
 # Transforming and Combining
@@ -45,18 +47,30 @@ These return both the matched value and its position in the input.
 @docs tuple2, tuple3
 
 
-# Alternatives and Repetition
+# Alternatives, Repetition, and Sequencing
 
-@docs choice, repeat
+@docs choice, repeat, combine, phrase
 
 
 # Autocompletion
 
 @docs autocomplete, topK
 
+
+# Grammar Introspection
+
+@docs grammar, wanted
+
+
+# Tokenizing
+
+@docs tokenize
+
 -}
 
 import Dict exposing (Dict)
+import Nld.Grammar as Grammar exposing (Grammar(..))
+import Nld.TokenType exposing (TokenType(..))
 import Peach exposing (Peach)
 import Set exposing (Set)
 
@@ -67,7 +81,7 @@ in the specified order and closer together.
 -}
 type Nld a
     = Done a TokenPositions Int
-    | More (Set String) (TokenPositions -> Int -> Peach (Nld a))
+    | More Grammar (Set String) (TokenPositions -> Int -> Peach (Nld a))
 
 
 {-| Internal representation of token positions in the input.
@@ -162,7 +176,7 @@ runHelper nld tp lastPos =
         Done a _ _ ->
             Peach.peach [ ( 0, a ) ]
 
-        More _ k ->
+        More _ _ k ->
             k tp lastPos
                 |> Peach.flatMap (\nld2 -> runHelper nld2 tp lastPos)
 
@@ -193,55 +207,7 @@ The result is canonicalized to the first word in the list.
 -}
 words : List String -> Nld String
 words wordList =
-    case wordList of
-        [] ->
-            More Set.empty (\_ _ -> Peach.fail)
-
-        first :: _ ->
-            let
-                allWords =
-                    Set.fromList wordList
-
-                k tp lastPos =
-                    let
-                        -- Find all positions where any of the words appear
-                        allPositions =
-                            wordList
-                                |> List.concatMap
-                                    (\w ->
-                                        positions w tp
-                                            |> Set.toList
-                                            |> List.map (\p -> ( w, p ))
-                                    )
-
-                        -- Weight by position gap and preference for earlier words in list
-                        weightedPositions =
-                            allPositions
-                                |> List.map
-                                    (\( w, p ) ->
-                                        let
-                                            wordPenalty =
-                                                wordList
-                                                    |> List.indexedMap Tuple.pair
-                                                    |> List.filter (\( _, word_ ) -> word_ == w)
-                                                    |> List.head
-                                                    |> Maybe.map (\( i, _ ) -> toFloat i * 0.1)
-                                                    |> Maybe.withDefault 0
-                                        in
-                                        ( gapCost lastPos p + wordPenalty, ( w, p ) )
-                                    )
-                    in
-                    if List.isEmpty weightedPositions then
-                        Peach.fail
-
-                    else
-                        Peach.peach weightedPositions
-                            |> Peach.map
-                                (\( w, p ) ->
-                                    Done first (remove w p tp) p
-                                )
-            in
-            More allWords k
+    map Tuple.first (indexedWords wordList)
 
 
 {-| Match any token and return it.
@@ -277,6 +243,35 @@ int =
     map Tuple.first indexedInt
 
 
+{-| Match a floating-point number.
+
+    runList float [ "3.14" ]
+    --> [ 3.14 ]
+
+    runList float [ "set", "rate", "to", "2.5" ]
+    --> [ 2.5 ]
+
+-}
+float : Nld Float
+float =
+    map Tuple.first indexedFloat
+
+
+{-| Match a boolean token. Accepts case-insensitive variations:
+"true", "True", "TRUE", "false", "False", "FALSE", etc.
+
+    runList boolean [ "true" ]
+    --> [ True ]
+
+    runList boolean [ "set", "verbose", "True" ]
+    --> [ True ]
+
+-}
+boolean : Nld Bool
+boolean =
+    map Tuple.first indexedBoolean
+
+
 {-| Match tokens satisfying a predicate.
 
     runList (tokenMatching (String.endsWith ".txt")) [ "open", "report.txt" ]
@@ -288,18 +283,6 @@ tokenMatching pred =
     map Tuple.first (indexedTokenMatching pred)
 
 
-{-| Match tokens using a filter-map function. If the function returns `Just`,
-the token is matched and the value is returned.
-
-    runList (tokenFilterMap String.toInt) [ "buy", "3", "apples" ]
-    --> [ 3 ]
-
--}
-tokenFilterMap : (String -> Maybe a) -> Nld a
-tokenFilterMap f =
-    map Tuple.first (indexedTokenFilterMap f)
-
-
 {-| Match any of several weighted tokens. Lower weights are preferred.
 
     runTake 1 (minimalToken [ ( 0.0, "delete" ), ( 1.0, "remove" ) ]) [ "remove", "delete" ]
@@ -308,46 +291,7 @@ tokenFilterMap f =
 -}
 minimalToken : List ( Float, String ) -> Nld String
 minimalToken weightedWords =
-    let
-        allWords =
-            List.map Tuple.second weightedWords |> Set.fromList
-
-        canonical =
-            weightedWords
-                |> List.sortBy Tuple.first
-                |> List.head
-                |> Maybe.map Tuple.second
-                |> Maybe.withDefault ""
-
-        k tp lastPos =
-            let
-                allPositions =
-                    weightedWords
-                        |> List.concatMap
-                            (\( baseWeight, w ) ->
-                                positions w tp
-                                    |> Set.toList
-                                    |> List.map (\p -> ( baseWeight, w, p ))
-                            )
-
-                weighted =
-                    allPositions
-                        |> List.map
-                            (\( baseWeight, w, p ) ->
-                                ( gapCost lastPos p + baseWeight, ( w, p ) )
-                            )
-            in
-            if List.isEmpty weighted then
-                Peach.fail
-
-            else
-                Peach.peach weighted
-                    |> Peach.map
-                        (\( w, p ) ->
-                            Done canonical (remove w p tp) p
-                        )
-    in
-    More allWords k
+    map Tuple.first (indexedMinimalToken weightedWords)
 
 
 
@@ -382,7 +326,7 @@ indexedWord w =
                 Peach.peach weightedPositions
                     |> Peach.map (\pos_ -> Done ( w, pos_ ) (remove w pos_ remaining) pos_)
     in
-    More (Set.singleton w) k
+    More (Literal w) (Set.singleton w) k
 
 
 {-| Match any of the given words and return the canonical (first) word with its position.
@@ -395,86 +339,28 @@ indexedWords : List String -> Nld ( String, Int )
 indexedWords wordList =
     case wordList of
         [] ->
-            More Set.empty (\_ _ -> Peach.fail)
+            indexedMinimalToken []
 
-        first :: _ ->
+        first :: rest ->
             let
-                allWords =
-                    Set.fromList wordList
-
-                k tp lastPos =
-                    let
-                        allPositions =
-                            wordList
-                                |> List.concatMap
-                                    (\w ->
-                                        positions w tp
-                                            |> Set.toList
-                                            |> List.map (\p -> ( w, p ))
-                                    )
-
-                        weightedPositions =
-                            allPositions
-                                |> List.map
-                                    (\( w, p ) ->
-                                        let
-                                            wordPenalty =
-                                                wordList
-                                                    |> List.indexedMap Tuple.pair
-                                                    |> List.filter (\( _, word_ ) -> word_ == w)
-                                                    |> List.head
-                                                    |> Maybe.map (\( i, _ ) -> toFloat i * 0.1)
-                                                    |> Maybe.withDefault 0
-                                        in
-                                        ( gapCost lastPos p + wordPenalty, ( w, p ) )
-                                    )
-                    in
-                    if List.isEmpty weightedPositions then
-                        Peach.fail
-
-                    else
-                        Peach.peach weightedPositions
-                            |> Peach.map
-                                (\( w, p ) ->
-                                    -- Canonicalize to first word in the list
-                                    Done ( first, p ) (remove w p tp) p
-                                )
+                weightedTokens =
+                    ( 0.0, first ) :: List.map (\t -> ( 1.0, t )) rest
             in
-            More allWords k
+            map (\( _, pos ) -> ( first, pos )) (indexedMinimalToken weightedTokens)
 
 
 {-| Match any token and return it with its position.
 -}
 indexedToken : Nld ( String, Int )
 indexedToken =
-    let
-        k tp lastPos =
-            let
-                allPositions =
-                    Dict.toList tp.byPosition
-
-                weightedPositions =
-                    allPositions
-                        |> List.map (\( p, t ) -> ( gapCost lastPos p, ( t, p ) ))
-            in
-            if List.isEmpty weightedPositions then
-                Peach.fail
-
-            else
-                Peach.peach weightedPositions
-                    |> Peach.map
-                        (\( t, p ) ->
-                            Done ( t, p ) (remove t p tp) p
-                        )
-    in
-    More Set.empty k
+    indexedTokenMatching (always True)
 
 
 {-| Match a natural number and return it with its position.
 -}
 indexedNat : Nld ( Int, Int )
 indexedNat =
-    indexedTokenFilterMap
+    indexedTokenOfType NatToken
         (\t ->
             String.toInt t
                 |> Maybe.andThen
@@ -492,32 +378,74 @@ indexedNat =
 -}
 indexedInt : Nld ( Int, Int )
 indexedInt =
-    indexedTokenFilterMap String.toInt
+    indexedTokenOfType IntToken String.toInt
 
 
-{-| Match tokens satisfying a predicate and return with position.
+{-| Match a floating-point number and return it with its position.
 -}
-indexedTokenMatching : (String -> Bool) -> Nld ( String, Int )
-indexedTokenMatching pred =
-    indexedTokenFilterMap
+indexedFloat : Nld ( Float, Int )
+indexedFloat =
+    indexedTokenOfType FloatToken String.toFloat
+
+
+{-| Match a boolean token and return it with its position.
+Accepts case-insensitive variations: "true", "True", "TRUE", "false", "False", "FALSE", etc.
+-}
+indexedBoolean : Nld ( Bool, Int )
+indexedBoolean =
+    indexedTokenOfType BooleanToken
         (\t ->
-            if pred t then
-                Just t
+            let
+                lower =
+                    String.toLower t
+            in
+            if lower == "true" then
+                Just True
+
+            else if lower == "false" then
+                Just False
 
             else
                 Nothing
         )
 
 
-{-| Match tokens using a filter-map function, returning the mapped value with its position.
-If the function returns `Just a` for a token, that token is matched and `( a, position )` is returned.
+{-| Match tokens satisfying a predicate and return with position.
+-}
+indexedTokenMatching : (String -> Bool) -> Nld ( String, Int )
+indexedTokenMatching pred =
+    let
+        k tp lastPos =
+            let
+                allPositions =
+                    Dict.toList tp.byPosition
+                        |> List.filter (\( _, t ) -> pred t)
 
-    runList (indexedTokenFilterMap String.toInt) [ "buy", "3", "apples" ]
-    --> [ ( 3, 1 ) ]
+                weightedPositions =
+                    allPositions
+                        |> List.map (\( p, t ) -> ( gapCost lastPos p, ( t, p ) ))
+            in
+            if List.isEmpty weightedPositions then
+                Peach.fail
+
+            else
+                Peach.peach weightedPositions
+                    |> Peach.map
+                        (\( t, p ) ->
+                            Done ( t, p ) (remove t p tp) p
+                        )
+    in
+    More AnyToken Set.empty k
+
+
+{-| Match a token of a given `TokenType` using a custom parse function.
+The `TokenType` is used in the `Grammar` representation.
+
+This is used to define `indexedNat`, `indexedFloat`, etc.
 
 -}
-indexedTokenFilterMap : (String -> Maybe a) -> Nld ( a, Int )
-indexedTokenFilterMap f =
+indexedTokenOfType : TokenType -> (String -> Maybe a) -> Nld ( a, Int )
+indexedTokenOfType tt parse =
     let
         k tp lastPos =
             let
@@ -525,7 +453,7 @@ indexedTokenFilterMap f =
                     Dict.toList tp.byPosition
                         |> List.filterMap
                             (\( p, t ) ->
-                                f t |> Maybe.map (\a -> ( p, t, a ))
+                                parse t |> Maybe.map (\a -> ( p, t, a ))
                             )
 
                 weightedPositions =
@@ -542,7 +470,47 @@ indexedTokenFilterMap f =
                             Done ( a, p ) (remove t p tp) p
                         )
     in
-    More Set.empty k
+    More (Token tt) Set.empty k
+
+
+{-| Match any of several weighted tokens, returning both the token and its position.
+Lower weights are preferred.
+-}
+indexedMinimalToken : List ( Float, String ) -> Nld ( String, Int )
+indexedMinimalToken weightedTokens =
+    let
+        allWords =
+            List.map Tuple.second weightedTokens |> Set.fromList
+
+        k tp lastPos =
+            let
+                allPositions =
+                    weightedTokens
+                        |> List.concatMap
+                            (\( baseWeight, w ) ->
+                                positions w tp
+                                    |> Set.toList
+                                    |> List.map (\p -> ( baseWeight, w, p ))
+                            )
+
+                weighted =
+                    allPositions
+                        |> List.map
+                            (\( baseWeight, w, p ) ->
+                                ( gapCost lastPos p + baseWeight, ( w, p ) )
+                            )
+            in
+            if List.isEmpty weighted then
+                Peach.fail
+
+            else
+                Peach.peach weighted
+                    |> Peach.map
+                        (\( w, p ) ->
+                            Done ( w, p ) (remove w p tp) p
+                        )
+    in
+    More (MinimalTokenGrammar weightedTokens) allWords k
 
 
 
@@ -556,17 +524,11 @@ This is the fundamental building block for applicative-style parsing with `andMa
     runList (succeed 42) [ "any", "tokens" ]
     --> [ 42 ]
 
-    -- Use with choice for default values:
-    runList (choice [ nat, succeed 1 ]) [ "not-a-number" ]
-    --> [ 1 ]
-
 -}
 succeed : a -> Nld a
 succeed a =
-    -- Use More with empty wanted set so it integrates properly with
-    -- the continuation-based parsing. The thunk immediately returns
-    -- Done with the value and preserves the current token positions.
-    More Set.empty
+    More (Seq [])
+        Set.empty
         (\tp lastPos ->
             Peach.peach [ ( 0.0, Done a tp lastPos ) ]
         )
@@ -584,8 +546,8 @@ map f nld =
         Done a rem lastPos ->
             Done (f a) rem lastPos
 
-        More wanted k ->
-            More wanted (\rem lastPos -> Peach.map (map f) (k rem lastPos))
+        More g w k ->
+            More g w (\rem lastPos -> Peach.map (map f) (k rem lastPos))
 
 
 {-| Combine two parsers.
@@ -598,14 +560,16 @@ map2 f nldA nldB =
                 Done b remB lastPosB ->
                     Done (f a b) remB (max lastPosA lastPosB)
 
-                More wantedB k ->
-                    More wantedB
+                More gb wantedB k ->
+                    More gb
+                        wantedB
                         (\_ _ ->
                             Peach.map (\nldB2 -> map2 f (Done a remA lastPosA) nldB2) (k remA lastPosA)
                         )
 
-        More wantedA k ->
-            More wantedA
+        More ga wantedA k ->
+            More (Grammar.seq [ ga, grammar nldB ])
+                wantedA
                 (\remaining lastPos ->
                     Peach.map (\nldA2 -> map2 f nldA2 nldB) (k remaining lastPos)
                 )
@@ -615,42 +579,42 @@ map2 f nldA nldB =
 -}
 map3 : (a -> b -> c -> d) -> Nld a -> Nld b -> Nld c -> Nld d
 map3 f nldA nldB nldC =
-    succeed f |> andMap nldA |> andMap nldB |> andMap nldC
+    map2 (\ab c -> ab c) (map2 f nldA nldB) nldC
 
 
 {-| Combine four parsers.
 -}
 map4 : (a -> b -> c -> d -> e) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e
 map4 f nldA nldB nldC nldD =
-    succeed f |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD
+    map2 (\abc d -> abc d) (map3 f nldA nldB nldC) nldD
 
 
 {-| Combine five parsers.
 -}
 map5 : (a -> b -> c -> d -> e -> f) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f
 map5 fn nldA nldB nldC nldD nldE =
-    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE
+    map2 (\abcd e -> abcd e) (map4 fn nldA nldB nldC nldD) nldE
 
 
 {-| Combine six parsers.
 -}
 map6 : (a -> b -> c -> d -> e -> f -> g) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g
 map6 fn nldA nldB nldC nldD nldE nldF =
-    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF
+    map2 (\abcde f_ -> abcde f_) (map5 fn nldA nldB nldC nldD nldE) nldF
 
 
 {-| Combine seven parsers.
 -}
 map7 : (a -> b -> c -> d -> e -> f -> g -> h) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h
 map7 fn nldA nldB nldC nldD nldE nldF nldG =
-    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF |> andMap nldG
+    map2 (\abcdef g_ -> abcdef g_) (map6 fn nldA nldB nldC nldD nldE nldF) nldG
 
 
 {-| Combine eight parsers.
 -}
 map8 : (a -> b -> c -> d -> e -> f -> g -> h -> i) -> Nld a -> Nld b -> Nld c -> Nld d -> Nld e -> Nld f -> Nld g -> Nld h -> Nld i
 map8 fn nldA nldB nldC nldD nldE nldF nldG nldH =
-    succeed fn |> andMap nldA |> andMap nldB |> andMap nldC |> andMap nldD |> andMap nldE |> andMap nldF |> andMap nldG |> andMap nldH
+    map2 (\abcdefg h_ -> abcdefg h_) (map7 fn nldA nldB nldC nldD nldE nldF nldG) nldH
 
 
 {-| Combine two parsers into a tuple.
@@ -681,11 +645,12 @@ andThen f nld =
                 Done b _ _ ->
                     Done b tp lastPos
 
-                More wanted k ->
-                    More wanted k
+                More g2 w2 k ->
+                    More g2 w2 k
 
-        More wanted k ->
-            More wanted
+        More g w k ->
+            More g
+                w
                 (\tp lastPos ->
                     k tp lastPos
                         |> Peach.map (andThen f)
@@ -704,17 +669,6 @@ This enables pipe-style composition for building parsers with arbitrary arity:
         [ "buy", "3" ]
     --> [ ( "buy", 3 ) ]
 
-Works with any number of fields - no need for `map4`, `map5`, etc:
-
-    runList
-        (succeed (\a b c -> { x = a, y = b, z = c })
-            |> andMap (word "a")
-            |> andMap (word "b")
-            |> andMap (word "c")
-        )
-        [ "a", "b", "c" ]
-    --> [ { x = "a", y = "b", z = "c" } ]
-
 -}
 andMap : Nld a -> Nld (a -> b) -> Nld b
 andMap nldA nldFn =
@@ -727,7 +681,7 @@ choice : List (Nld a) -> Nld a
 choice parsers =
     case parsers of
         [] ->
-            More Set.empty (\_ _ -> Peach.fail)
+            More (Seq []) Set.empty (\_ _ -> Peach.fail)
 
         [ single ] ->
             single
@@ -736,8 +690,11 @@ choice parsers =
             let
                 allWanted =
                     parsers
-                        |> List.map getWanted
+                        |> List.map wanted
                         |> List.foldl Set.union Set.empty
+
+                g =
+                    Grammar.choice (List.map grammar parsers)
 
                 k tp lastPos =
                     Peach.peach (List.map (\n -> ( 0.0, n )) parsers)
@@ -747,11 +704,11 @@ choice parsers =
                                     Done a rem lp ->
                                         Peach.peach [ ( 0.0, Done a rem lp ) ]
 
-                                    More _ k2 ->
+                                    More _ _ k2 ->
                                         k2 tp lastPos
                             )
             in
-            More allWanted k
+            More g allWanted k
 
 
 {-| Match zero or more occurrences of a parser.
@@ -774,7 +731,7 @@ repeat nld =
                 Done a rem pos ->
                     Just ( a, rem, pos )
 
-                More _ cont ->
+                More _ _ cont ->
                     -- Get the first result that's at or after lastPos
                     cont tp lastPos
                         |> Peach.toList
@@ -788,7 +745,7 @@ repeat nld =
                                         else
                                             Nothing
 
-                                    More _ _ ->
+                                    More _ _ _ ->
                                         Nothing
                             )
                         |> List.head
@@ -824,7 +781,38 @@ repeat nld =
                         Done (List.take len fullList) finalTp finalPos
                     )
     in
-    More (getWanted nld) k
+    More (RepeatGrammar (grammar nld)) (wanted nld) k
+
+
+{-| Run each parser in the list and collect the results into a list.
+
+    runList (combine [ word "a", word "b" ]) [ "a", "b" ]
+    --> [ [ "a", "b" ] ]
+
+Individual elements can use `words` for synonyms:
+
+    runList (combine [ words [ "remove", "delete" ], words [ "file", "document" ] ]) [ "please", "erase", "the", "document" ]
+    --> []
+
+-}
+combine : List (Nld a) -> Nld (List a)
+combine nlds =
+    List.foldr (map2 (::)) (succeed []) nlds
+
+
+{-| Match all of the words in the list (using `word` for each) and return them
+joined by spaces.
+
+    runList (phrase [ "delete", "file" ]) [ "please", "delete", "the", "file" ]
+    --> [ "delete file" ]
+
+    runList (tuple2 (phrase [ "set", "volume" ]) nat) [ "set", "the", "volume", "to", "11" ]
+    --> [ ( "set volume", 11 ) ]
+
+-}
+phrase : List String -> Nld String
+phrase ws =
+    map (String.join " ") (combine (List.map word ws))
 
 
 
@@ -833,6 +821,8 @@ repeat nld =
 
 {-| Get autocomplete suggestions for incomplete input.
 Returns a list of sets of tokens that could complete the parse.
+
+    import Set
 
     topK 5 (word "buy") []
     -- Returns [ Set.fromList [ "buy" ] ]
@@ -864,12 +854,6 @@ autocomplete nld tp =
 
 
 {-| Internal helper for autocomplete that tracks current state.
-
-  - `nld`: The current parser state
-  - `tp`: Remaining token positions
-  - `lastPos`: Last matched position
-  - `accumulated`: Tokens we've been looking for along this path
-
 -}
 autocompleteHelper : Nld a -> TokenPositions -> Int -> Set String -> Peach (Set String)
 autocompleteHelper nld tp lastPos accumulated =
@@ -878,7 +862,7 @@ autocompleteHelper nld tp lastPos accumulated =
             -- Parse succeeded, no suggestions needed at this branch
             Peach.fail
 
-        More wanted k ->
+        More _ w k ->
             let
                 -- Try to continue parsing
                 continuation =
@@ -888,46 +872,38 @@ autocompleteHelper nld tp lastPos accumulated =
                 exploreResults =
                     Peach.lazy 0
                         (\() ->
-                            -- Use flatMap to explore each result from the continuation
                             continuation
                                 |> Peach.flatMap
                                     (\nextNld ->
                                         case nextNld of
                                             Done _ _ _ ->
-                                                -- This branch succeeded, no suggestions
                                                 Peach.fail
 
-                                            More nextWanted nextK ->
-                                                -- Continue exploring
+                                            More _ nextWanted _ ->
                                                 autocompleteHelper
-                                                    (More nextWanted nextK)
+                                                    nextNld
                                                     tp
                                                     lastPos
                                                     (Set.union accumulated nextWanted)
                                     )
                         )
 
-                -- Check if the continuation produces any results
-                -- If not, we've hit a failure point - emit suggestions
                 emitSuggestions =
                     let
                         newAccumulated =
-                            Set.union accumulated wanted
+                            Set.union accumulated w
                     in
                     if Set.isEmpty newAccumulated then
                         Peach.fail
 
                     else
-                        -- Use lazy to defer checking if continuation is empty
                         Peach.lazy 0
                             (\() ->
                                 case Peach.head continuation of
                                     Nothing ->
-                                        -- Continuation is empty - this is a failure point
                                         Peach.peach [ ( 0, newAccumulated ) ]
 
                                     Just _ ->
-                                        -- Continuation has results, don't emit here
                                         Peach.fail
                             )
             in
@@ -935,19 +911,211 @@ autocompleteHelper nld tp lastPos accumulated =
 
 
 
--- HELPERS
+-- GRAMMAR INTROSPECTION
 
 
-{-| Get the set of wanted tokens from an Nld.
+{-| Extract the `Grammar` from an `Nld` parser. The `Grammar` is a first-class
+description of what the parser expects, useful for introspection and serialization.
+
+    import Nld.Grammar exposing (Grammar(..))
+    import Nld.TokenType exposing (TokenType(..))
+
+    grammar (word "hello")
+    --> Literal "hello"
+
+    grammar (tuple2 (word "buy") nat)
+    --> Seq [ Literal "buy", Token NatToken ]
+
 -}
-getWanted : Nld a -> Set String
-getWanted nld =
+grammar : Nld a -> Grammar
+grammar nld =
+    case nld of
+        Done _ _ _ ->
+            Seq []
+
+        More g _ _ ->
+            g
+
+
+{-| Returns the set of tokens that the parser is looking for.
+This is used internally for optimization but can be useful for debugging.
+
+    import Set
+
+    wanted (word "hello")
+    --> Set.fromList [ "hello" ]
+
+-}
+wanted : Nld a -> Set String
+wanted nld =
     case nld of
         Done _ _ _ ->
             Set.empty
 
-        More wanted _ ->
-            wanted
+        More _ w _ ->
+            w
+
+
+
+-- TOKENIZE
+
+
+{-| Split a text string into tokens suitable for use with `runList`, `runTake`,
+and other `Nld` runners. It handles:
+
+  - Whitespace: splits on whitespace, discarding it.
+  - camelCase: splits at lowercase-to-uppercase boundaries.
+  - Uppercase runs: keeps runs of uppercase letters together, splitting before the
+    final uppercase letter when followed by lowercase (e.g. "HTML" and "Parser").
+  - Alpha/numeric boundaries: splits between letters and digits.
+  - Punctuation: each non-alphanumeric, non-whitespace character becomes its own token.
+
+Examples:
+
+    tokenize "hello world"
+    --> [ "hello", "world" ]
+
+    tokenize "camelCase"
+    --> [ "camel", "Case" ]
+
+    tokenize "HTMLParser"
+    --> [ "HTML", "Parser" ]
+
+    tokenize "abcra123"
+    --> [ "abcra", "123" ]
+
+    tokenize "(hi!)"
+    --> [ "(", "hi", "!", ")" ]
+
+    tokenize "setHTMLParser"
+    --> [ "set", "HTML", "Parser" ]
+
+-}
+tokenize : String -> List String
+tokenize input =
+    let
+        chars =
+            String.toList input
+
+        categorize c =
+            if Char.isUpper c then
+                Upper
+
+            else if Char.isLower c then
+                Lower
+
+            else if Char.isDigit c then
+                Digit
+
+            else if c == ' ' || c == '\t' || c == '\n' || c == '\u{000D}' then
+                Whitespace
+
+            else
+                Punct
+
+        go : List Char -> List Char -> List String -> List String
+        go remaining current acc =
+            case remaining of
+                [] ->
+                    let
+                        final =
+                            if List.isEmpty current then
+                                acc
+
+                            else
+                                acc ++ [ String.fromList (List.reverse current) ]
+                    in
+                    final
+
+                c :: rest ->
+                    let
+                        cat =
+                            categorize c
+                    in
+                    case cat of
+                        Whitespace ->
+                            if List.isEmpty current then
+                                go rest [] acc
+
+                            else
+                                go rest [] (acc ++ [ String.fromList (List.reverse current) ])
+
+                        Punct ->
+                            if List.isEmpty current then
+                                go rest [] (acc ++ [ String.fromChar c ])
+
+                            else
+                                go rest [] (acc ++ [ String.fromList (List.reverse current), String.fromChar c ])
+
+                        Upper ->
+                            case current of
+                                [] ->
+                                    go rest [ c ] acc
+
+                                prev :: _ ->
+                                    if categorize prev == Lower then
+                                        -- camelCase boundary
+                                        go rest [ c ] (acc ++ [ String.fromList (List.reverse current) ])
+
+                                    else if categorize prev == Upper then
+                                        -- Check if this uppercase letter starts a new word
+                                        -- (uppercase followed by lowercase = new camelCase word)
+                                        case rest of
+                                            next :: _ ->
+                                                if categorize next == Lower && not (List.isEmpty current) then
+                                                    -- Split: keep current as uppercase run, start new word with c
+                                                    go rest [ c ] (acc ++ [ String.fromList (List.reverse current) ])
+
+                                                else
+                                                    go rest (c :: current) acc
+
+                                            [] ->
+                                                go rest (c :: current) acc
+
+                                    else if categorize prev == Digit then
+                                        -- digit-to-letter boundary
+                                        go rest [ c ] (acc ++ [ String.fromList (List.reverse current) ])
+
+                                    else
+                                        go rest (c :: current) acc
+
+                        Lower ->
+                            case current of
+                                [] ->
+                                    go rest [ c ] acc
+
+                                prev :: _ ->
+                                    if categorize prev == Digit then
+                                        go rest [ c ] (acc ++ [ String.fromList (List.reverse current) ])
+
+                                    else
+                                        go rest (c :: current) acc
+
+                        Digit ->
+                            case current of
+                                [] ->
+                                    go rest [ c ] acc
+
+                                prev :: _ ->
+                                    if categorize prev == Digit then
+                                        go rest (c :: current) acc
+
+                                    else
+                                        go rest [ c ] (acc ++ [ String.fromList (List.reverse current) ])
+    in
+    go chars [] []
+
+
+type CharCategory
+    = Upper
+    | Lower
+    | Digit
+    | Whitespace
+    | Punct
+
+
+
+-- HELPERS
 
 
 {-| Look up positions of a token in TokenPositions.

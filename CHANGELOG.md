@@ -10,6 +10,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+Add `Grammar` for serialization / inspection.
+
 ## [1.0.1] - 2026-02-02
 
 ### Fixed
@@ -27,11 +29,13 @@ Initial release. This is an Elm port of Paul Chiusano's Unison libraries
 #### Nld Module - Natural Language Disambiguator
 
 A flexible parser for loosely ordered token sequences that:
+
 - Ignores irrelevant tokens
 - Allows tokens to appear in any order (preferring specified order)
 - Produces results in priority order
 
 **Token Matchers:**
+
 - `word` - Match a specific word
 - `words` - Match synonyms, canonicalizing to the first
 - `token` - Match any token
@@ -40,10 +44,12 @@ A flexible parser for loosely ordered token sequences that:
 - `minimalToken` - Match weighted tokens
 
 **Indexed Variants:**
+
 - `indexedWord`, `indexedWords`, `indexedToken`, `indexedNat`, `indexedTokenMatching`
 - Return both the matched value and its position
 
 **Combinators:**
+
 - `map`, `map2`, `map3` - Transform parser results
 - `andThen` - Sequence parsers
 - `tuple2`, `tuple3` - Combine parsers into tuples
@@ -51,10 +57,12 @@ A flexible parser for loosely ordered token sequences that:
 - `repeat` - Match zero or more occurrences
 
 **Autocompletion:**
+
 - `autocomplete` - Get suggestions for incomplete input
 - `topK` - Get top K completion suggestions
 
 **Running Parsers:**
+
 - `run`, `runList`, `runTake` - Execute parsers on token lists
 
 #### Peach Module - Priority Search
